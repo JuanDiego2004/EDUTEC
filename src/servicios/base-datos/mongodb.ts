@@ -12,7 +12,7 @@ const options = {
     strict: true,
     deprecationErrors: true,
   },
-  // Opciones adicionales para mejorar la conexión
+  
   maxPoolSize: 10,
   minPoolSize: 5,
   serverSelectionTimeoutMS: 5000,

@@ -3,9 +3,7 @@ import { MongoClient, Db } from 'mongodb';
 let clientePrimario: MongoClient | null = null;
 let clienteSecundario: MongoClient | null = null;
 
-/**
- * Obtiene el cliente MongoDB primario
- */
+
 export async function obtenerClienteMongoPrimario(): Promise<Db> {
     if (!process.env.MONGODB_PRIMARIA_URI) {
         throw new Error('MONGODB_PRIMARIA_URI no está configurada en .env');
@@ -19,12 +17,10 @@ export async function obtenerClienteMongoPrimario(): Promise<Db> {
     return clientePrimario.db();
 }
 
-/**
- * Obtiene el cliente MongoDB secundario
- */
+
 export async function obtenerClienteMongoSecundario(): Promise<Db> {
     if (!process.env.MONGODB_SECUNDARIA_URI) {
-        // Si no hay secundaria configurada, usar la primaria como fallback
+        
         console.warn(' MONGODB_SECUNDARIA_URI no configurada, usando primaria');
         return obtenerClienteMongoPrimario();
     }
@@ -37,9 +33,6 @@ export async function obtenerClienteMongoSecundario(): Promise<Db> {
     return clienteSecundario.db();
 }
 
-/**
- * Verifica la salud de MongoDB primario
- */
 export async function verificarSaludMongoPrimario(): Promise<boolean> {
     try {
         const db = await obtenerClienteMongoPrimario();
@@ -51,9 +44,7 @@ export async function verificarSaludMongoPrimario(): Promise<boolean> {
     }
 }
 
-/**
- * Cierra las conexiones MongoDB
- */
+
 export async function cerrarConexionesMongo(): Promise<void> {
     if (clientePrimario) {
         await clientePrimario.close();

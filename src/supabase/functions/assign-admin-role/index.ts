@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.75.0'
+import { createClient } from 'https:
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -6,7 +6,7 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight requests
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Create Supabase client with service role
+    
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     
@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
       }
     })
 
-    // Find user by email
+    
     const { data: userData, error: userError } = await supabase.auth.admin.listUsers()
     
     if (userError) {
@@ -60,7 +60,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Check if user already has admin role
+    
     const { data: existingRole } = await supabase
       .from('user_roles')
       .select('role')
@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
       .single()
 
     if (existingRole) {
-      // Update existing role to admin
+      
       const { error: updateError } = await supabase
         .from('user_roles')
         .update({ role: 'admin' })
@@ -86,7 +86,7 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     } else {
-      // Insert new admin role
+      
       const { error: insertError } = await supabase
         .from('user_roles')
         .insert({

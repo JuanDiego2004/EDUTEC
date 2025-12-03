@@ -1,65 +1,228 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/componentes/ui/card";
-import { supabase } from "@/servicios/base-datos/supabase";
+import { Badge } from "@/componentes/ui/badge";
+import { supabaseFailover } from "@/servicios/base-datos/supabaseConRespaldo";
 import {
   Users,
+  GraduationCap,
   BookOpen,
   DollarSign,
-  Package,
+  Building2,
+  Calendar,
+  Activity,
+  TrendingUp,
   MapPin,
+  Package,
   Zap,
   Shield,
   Layers,
   CheckCircle,
   Clock
 } from "lucide-react";
-import { Badge } from "@/componentes/ui/badge";
+import { SyncDashboard } from './SyncDashboard';
+import { obtenerClienteSupabasePrimario } from '@/servicios/base-datos/conexionPostgres';
 
 const Dashboard = () => {
   const { data: estudiantes, isLoading: loadingEstudiantes } = useQuery({
     queryKey: ["estudiantes-count"],
     queryFn: async () => {
-      const { count } = await supabase.from("estudiantes").select("*", { count: "exact", head: true });
-      return count || 0;
+      try {
+        const cliente = supabaseFailover.getDirectClient();
+        const { count, error } = await cliente
+          .from("estudiantes")
+          .select("*", { count: "exact", head: true });
+
+        if (error) {
+          // Si hay error de red, forzar failover
+          if (error.message?.includes('Failed to fetch') || error.name === 'TypeError') {
+            supabaseFailover.forceFailover('Error de red en Dashboard - estudiantes count');
+            // Reintentar con secundaria
+            const clienteSecundario = supabaseFailover.getDirectClient();
+            const { count: countSecundario } = await clienteSecundario
+              .from("estudiantes")
+              .select("*", { count: "exact", head: true });
+            return countSecundario || 0;
+          }
+          console.error("Error consultando estudiantes:", error);
+        }
+
+        return count || 0;
+      } catch (err: any) {
+        console.error("Excepción en estudiantes count:", err);
+        // Intentar con failover
+        if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') {
+          supabaseFailover.forceFailover('Error de red en Dashboard - estudiantes count (catch)');
+          const clienteSecundario = supabaseFailover.getDirectClient();
+          const { count } = await clienteSecundario
+            .from("estudiantes")
+            .select("*", { count: "exact", head: true });
+          return count || 0;
+        }
+        return 0;
+      }
     },
+    retry: false,
+    staleTime: 30000,
   });
 
   const { data: matriculas, isLoading: loadingMatriculas } = useQuery({
     queryKey: ["matriculas-count"],
     queryFn: async () => {
-      const { count } = await supabase
-        .from("matriculas")
-        .select("*", { count: "exact", head: true })
-        .eq("estado", "activa");
-      return count || 0;
+      try {
+        const cliente = supabaseFailover.getDirectClient();
+        const { count, error } = await cliente
+          .from("matriculas")
+          .select("*", { count: "exact", head: true })
+          .eq("estado", "activa");
+
+        if (error) {
+          if (error.message?.includes('Failed to fetch') || error.name === 'TypeError') {
+            supabaseFailover.forceFailover('Error de red en Dashboard - matriculas count');
+            const clienteSecundario = supabaseFailover.getDirectClient();
+            const { count: countSecundario } = await clienteSecundario
+              .from("matriculas")
+              .select("*", { count: "exact", head: true })
+              .eq("estado", "activa");
+            return countSecundario || 0;
+          }
+        }
+
+        return count || 0;
+      } catch (err: any) {
+        if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') {
+          supabaseFailover.forceFailover('Error de red en Dashboard - matriculas count (catch)');
+          const clienteSecundario = supabaseFailover.getDirectClient();
+          const { count } = await clienteSecundario
+            .from("matriculas")
+            .select("*", { count: "exact", head: true })
+            .eq("estado", "activa");
+          return count || 0;
+        }
+        return 0;
+      }
     },
+    retry: false,
+    staleTime: 30000,
   });
 
   const { data: pagosTotal, isLoading: loadingPagos } = useQuery({
     queryKey: ["pagos-total"],
     queryFn: async () => {
-      const { data } = await supabase.from("pagos").select("monto").eq("estado", "completado");
-      return (data as any[])?.reduce((sum, p) => sum + Number(p.monto), 0) || 0;
+      try {
+        const cliente = supabaseFailover.getDirectClient();
+        const { data, error } = await cliente
+          .from("pagos")
+          .select("monto")
+          .eq("estado", "completado");
+
+        if (error) {
+          if (error.message?.includes('Failed to fetch') || error.name === 'TypeError') {
+            supabaseFailover.forceFailover('Error de red en Dashboard - pagos total');
+            const clienteSecundario = supabaseFailover.getDirectClient();
+            const { data: dataSecundario } = await clienteSecundario
+              .from("pagos")
+              .select("monto")
+              .eq("estado", "completado");
+            return (dataSecundario as any[])?.reduce((sum, p) => sum + Number(p.monto), 0) || 0;
+          }
+        }
+
+        return (data as any[])?.reduce((sum, p) => sum + Number(p.monto), 0) || 0;
+      } catch (err: any) {
+        if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') {
+          supabaseFailover.forceFailover('Error de red en Dashboard - pagos total (catch)');
+          const clienteSecundario = supabaseFailover.getDirectClient();
+          const { data } = await clienteSecundario
+            .from("pagos")
+            .select("monto")
+            .eq("estado", "completado");
+          return (data as any[])?.reduce((sum, p) => sum + Number(p.monto), 0) || 0;
+        }
+        return 0;
+      }
     },
+    retry: false,
+    staleTime: 30000,
   });
 
   const { data: inventarioItems, isLoading: loadingInventario } = useQuery({
     queryKey: ["inventario-count"],
     queryFn: async () => {
-      const { count } = await supabase
-        .from("inventario")
-        .select("*", { count: "exact", head: true })
-        .eq("activo", true);
-      return count || 0;
+      try {
+        const cliente = supabaseFailover.getDirectClient();
+        const { count, error } = await cliente
+          .from("inventario")
+          .select("*", { count: "exact", head: true })
+          .eq("activo", true);
+
+        if (error) {
+          if (error.message?.includes('Failed to fetch') || error.name === 'TypeError') {
+            supabaseFailover.forceFailover('Error de red en Dashboard - inventario count');
+            const clienteSecundario = supabaseFailover.getDirectClient();
+            const { count: countSecundario } = await clienteSecundario
+              .from("inventario")
+              .select("*", { count: "exact", head: true })
+              .eq("activo", true);
+            return countSecundario || 0;
+          }
+        }
+
+        return count || 0;
+      } catch (err: any) {
+        if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') {
+          supabaseFailover.forceFailover('Error de red en Dashboard - inventario count (catch)');
+          const clienteSecundario = supabaseFailover.getDirectClient();
+          const { count } = await clienteSecundario
+            .from("inventario")
+            .select("*", { count: "exact", head: true })
+            .eq("activo", true);
+          return count || 0;
+        }
+        return 0;
+      }
     },
+    retry: false,
+    staleTime: 30000,
   });
 
   const { data: sedes, isLoading: loadingSedes } = useQuery({
     queryKey: ["sedes"],
     queryFn: async () => {
-      const { data } = await supabase.from("sedes").select("*").eq("activo", true);
-      return data || [];
+      try {
+        const cliente = supabaseFailover.getDirectClient();
+        const { data, error } = await cliente
+          .from("sedes")
+          .select("*")
+          .eq("activo", true);
+
+        if (error) {
+          if (error.message?.includes('Failed to fetch') || error.name === 'TypeError') {
+            supabaseFailover.forceFailover('Error de red en Dashboard - sedes');
+            const clienteSecundario = supabaseFailover.getDirectClient();
+            const { data: dataSecundario } = await clienteSecundario
+              .from("sedes")
+              .select("*")
+              .eq("activo", true);
+            return dataSecundario || [];
+          }
+        }
+
+        return data || [];
+      } catch (err: any) {
+        if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') {
+          supabaseFailover.forceFailover('Error de red en Dashboard - sedes (catch)');
+          const clienteSecundario = supabaseFailover.getDirectClient();
+          const { data } = await clienteSecundario
+            .from("sedes")
+            .select("*")
+            .eq("activo", true);
+          return data || [];
+        }
+        return [];
+      }
     },
+    retry: false,
+    staleTime: 30000,
   });
 
   return (
@@ -134,7 +297,7 @@ const Dashboard = () => {
 
         {/* Inventario - Card vertical */}
         <div className="col-span-6 lg:col-span-3">
-          <Card className="h-full bg-white dark:bg-slate-900 border-0 shadow-xl hover:shadow-2xl transition-all duration-300">
+          {/* <Card className="h-full bg-white dark:bg-slate-900 border-0 shadow-xl hover:shadow-2xl transition-all duration-300">
             <CardContent className="p-6">
               {loadingInventario ? (
                 <div className="animate-pulse space-y-4">
@@ -151,7 +314,7 @@ const Dashboard = () => {
                 </>
               )}
             </CardContent>
-          </Card>
+          </Card> */}
         </div>
 
         {/* Ingresos - Card horizontal destacado */}

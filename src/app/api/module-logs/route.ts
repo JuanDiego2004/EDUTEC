@@ -32,12 +32,12 @@ import { NextResponse } from "next/server";
 
 export async function POST(request: Request) {
     const DB_NAME = "reyna_de_la_paz";
-    const COLLECTION_NAME = "logs"; 
+    const COLLECTION_NAME = "logs";
 
     try {
         const body = await request.json();
 
-        
+
         const camposRequeridos = ['idUsuario', 'correoUsuario', 'rolUsuario', 'tipoActividad', 'modulo'];
         const camposFaltantes = camposRequeridos.filter(campo => !body[campo]);
 
@@ -52,71 +52,101 @@ export async function POST(request: Request) {
             );
         }
 
-        
+
         const documentoLog = {
-            
+
             usuario: {
                 id: body.idUsuario,
                 correo: body.correoUsuario,
                 rol: body.rolUsuario
             },
 
-            
+
             accion: {
-                tipo: body.tipoActividad,           
-                modulo: body.modulo,                 
-                descripcion: body.descripcion || '', 
+                tipo: body.tipoActividad,
+                modulo: body.modulo,
+                descripcion: body.descripcion || '',
                 exitoso: body.exito !== undefined ? body.exito : true
             },
 
-            
+
             entidad: {
-                tipo: body.tipoEntidad || null,      
-                id: body.idEntidad || null,          
-                datosPrevios: body.datosPrevios || null,  
-                datosNuevos: body.datosNuevos || null     
+                tipo: body.tipoEntidad || null,
+                id: body.idEntidad || null,
+                datosPrevios: body.datosPrevios || null,
+                datosNuevos: body.datosNuevos || null
             },
 
-            
+
             metadatos: {
                 ...body.metadata,
-                
-                
-                
+
+
+
             },
 
-            
+
             fechaHora: body.fechaHora ? new Date(body.fechaHora) : new Date(),
             creadoEn: new Date()
         };
 
-        
-        await gestorDB.ejecutarConFailover(
-            'mongodb',
-            async (db) => {
-                const dbActual = db.client ? db.client.db(DB_NAME) : db.db(DB_NAME);
-                await dbActual.collection(COLLECTION_NAME).insertOne(documentoLog);
-            },
-            true, 
-            {
-                tipo: 'INSERT',
-                coleccion: COLLECTION_NAME,
-                datos: documentoLog
-            }
-        );
+        // DUAL-WRITE: Insertar en AMBAS bases de MongoDB
+        console.log('📝 [Logs] Dual-write: Insertando en AMBAS bases de MongoDB...');
 
-        return NextResponse.json({
-            ok: true,
-            mensaje: 'Log registrado exitosamente',
-            log: {
-                usuario: documentoLog.usuario.correo,
-                accion: `${documentoLog.accion.tipo} en ${documentoLog.accion.modulo}`,
-                timestamp: documentoLog.fechaHora
-            }
-        });
+        const [resultadoPrimaria, resultadoSecundaria] = await Promise.allSettled([
+            // Primaria
+            (async () => {
+                const { obtenerClienteMongoPrimario } = await import('@/servicios/base-datos/conexionMongo');
+                const dbPrimaria = await obtenerClienteMongoPrimario();
+                return await dbPrimaria.collection(COLLECTION_NAME).insertOne(documentoLog);
+            })(),
+            // Secundaria
+            (async () => {
+                const { obtenerClienteMongoSecundario } = await import('@/servicios/base-datos/conexionMongo');
+                const dbSecundaria = await obtenerClienteMongoSecundario();
+                return await dbSecundaria.collection(COLLECTION_NAME).insertOne(documentoLog);
+            })()
+        ]);
+
+        // Verificar resultados
+        const primOk = resultadoPrimaria.status === 'fulfilled';
+        const secOk = resultadoSecundaria.status === 'fulfilled';
+
+        if (primOk) {
+            console.log(' Log insertado en MongoDB PRIMARIA');
+        } else {
+            console.warn(' MongoDB PRIMARIA falló:', resultadoPrimaria.status === 'rejected' ? resultadoPrimaria.reason : 'Unknown');
+        }
+
+        if (secOk) {
+            console.log(' Log insertado en MongoDB SECUNDARIA');
+        } else {
+            console.warn(' MongoDB SECUNDARIA falló:', resultadoSecundaria.status === 'rejected' ? resultadoSecundaria.reason : 'Unknown');
+        }
+
+        // Si al menos una tuvo éxito, considerar exitoso
+        if (primOk || secOk) {
+            return NextResponse.json({
+                ok: true,
+                mensaje: 'Log registrado exitosamente',
+                replicacion: {
+                    primaria: primOk ? 'exitosa' : 'fallida',
+                    secundaria: secOk ? 'exitosa' : 'fallida'
+                },
+                log: {
+                    usuario: documentoLog.usuario.correo,
+                    accion: `${documentoLog.accion.tipo} en ${documentoLog.accion.modulo}`,
+                    timestamp: documentoLog.fechaHora
+                }
+            });
+        }
+
+        // Ambas fallaron
+        console.error(' AMBAS bases de MongoDB fallaron al insertar log');
+        throw new Error('No se pudo guardar el log en ninguna base de datos');
 
     } catch (error) {
-        console.error("Error guardando log:", error);
+        console.error(" Error guardando log:", error);
         return NextResponse.json(
             {
                 ok: false,
@@ -146,7 +176,7 @@ export async function GET(request: Request) {
     try {
         const { searchParams } = new URL(request.url);
 
-        
+
         const filtros: any = {};
 
         if (searchParams.get('rol')) {
@@ -176,29 +206,54 @@ export async function GET(request: Request) {
             1000
         );
 
-        
-        const logs = await gestorDB.ejecutarConFailover(
-            'mongodb',
-            async (db) => {
-                const dbActual = db.client ? db.client.db(DB_NAME) : db.db(DB_NAME);
-                return await dbActual
+        console.log('📖 [Logs GET] Intentando leer de MongoDB PRIMARIA...');
+        let logs: any[] = [];
+        let fuente = '';
+
+        // Intentar primero con PRIMARIA
+        try {
+            const { obtenerClienteMongoPrimario } = await import('@/servicios/base-datos/conexionMongo');
+            const dbPrimaria = await obtenerClienteMongoPrimario();
+            logs = await dbPrimaria
+                .collection(COLLECTION_NAME)
+                .find(filtros)
+                .sort({ fechaHora: -1 })
+                .limit(limite)
+                .toArray();
+
+            fuente = 'primaria';
+            console.log(` [Logs GET] ${logs.length} logs leídos de PRIMARIA`);
+        } catch (errorPrimaria) {
+            console.warn(' [Logs GET] Primaria falló, intentando SECUNDARIA...', errorPrimaria);
+
+            // Fallback a SECUNDARIA
+            try {
+                const { obtenerClienteMongoSecundario } = await import('@/servicios/base-datos/conexionMongo');
+                const dbSecundaria = await obtenerClienteMongoSecundario();
+                logs = await dbSecundaria
                     .collection(COLLECTION_NAME)
                     .find(filtros)
                     .sort({ fechaHora: -1 })
                     .limit(limite)
                     .toArray();
-            },
-            false 
-        );
+
+                fuente = 'secundaria';
+                console.log(` [Logs GET] ${logs.length} logs leídos de SECUNDARIA`);
+            } catch (errorSecundaria) {
+                console.error(' [Logs GET] AMBAS bases fallaron');
+                throw new Error('No se pudo leer logs de ninguna base de datos');
+            }
+        }
 
         return NextResponse.json({
             ok: true,
             total: logs.length,
+            fuente,
             logs
         });
 
     } catch (error) {
-        console.error("Error consultando logs:", error);
+        console.error(" Error consultando logs:", error);
         return NextResponse.json(
             {
                 ok: false,

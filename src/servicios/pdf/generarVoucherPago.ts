@@ -5,13 +5,6 @@ interface DatosEstudiante {
     nombres: string;
     apellidos: string;
     dni?: string;
-    codigo?: string;
-}
-
-interface DatosCiclo {
-    nombre: string;
-    fecha_inicio?: string;
-    fecha_fin?: string;
 }
 
 interface DatosCuota {
@@ -21,184 +14,123 @@ interface DatosCuota {
     fecha_vencimiento: string;
 }
 
-interface DatosPlanPago {
-    nombre: string;
-    total: number;
-    pagado: number;
-    restante: number;
-}
-
 interface DatosVoucher {
     numeroVoucher: string;
     estudiante: DatosEstudiante;
-    ciclo: DatosCiclo;
-    planPago: DatosPlanPago;
+    ciclo: string;
+    planPago: string;
     cuota: DatosCuota;
     metodoPago: string;
     montoPagado: number;
     fechaPago: string;
 }
 
-/**
- * Genera un voucher/comprobante de pago en PDF
- */
+
 export const generarVoucherPago = (datos: DatosVoucher) => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
-    let yPosition = 20;
+    let y = 20;
 
-    // ========== ENCABEZADO ==========
-    doc.setFillColor(79, 70, 229); // Indigo-600
-    doc.rect(0, 0, pageWidth, 40, 'F');
-
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
+    
+    doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
-    doc.text('COMPROBANTE DE PAGO', pageWidth / 2, 15, { align: 'center' });
+    doc.text('Institución Educativa "Reyna de la Paz"', pageWidth / 2, y, { align: 'center' });
 
-    doc.setFontSize(11);
-    doc.setFont('helvetica', 'normal');
-    doc.text('Institución Educativa "Reyna de la Paz"', pageWidth / 2, 23, { align: 'center' });
-
-    doc.setFontSize(9);
-    doc.text('Voucher de Pago - Documento Oficial', pageWidth / 2, 30, { align: 'center' });
-
-    // ========== NÚMERO DE VOUCHER ==========
-    yPosition = 50;
-    doc.setFillColor(241, 245, 249); // Slate-100
-    doc.roundedRect(14, yPosition - 5, pageWidth - 28, 15, 3, 3, 'F');
-
-    doc.setTextColor(0, 0, 0);
-    doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
-    doc.text('N° VOUCHER:', 20, yPosition + 3);
-
+    y += 8;
     doc.setFontSize(14);
-    doc.setTextColor(79, 70, 229); // Indigo-600
-    doc.text(datos.numeroVoucher, pageWidth - 20, yPosition + 3, { align: 'right' });
+    doc.text('COMPROBANTE DE PAGO', pageWidth / 2, y, { align: 'center' });
 
-    // ========== FECHA DE EMISIÓN ==========
-    yPosition += 15;
-    doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139); // Slate-500
+    
+    y += 12;
+    doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
+    doc.text(`Voucher N°: ${datos.numeroVoucher}`, pageWidth / 2, y, { align: 'center' });
+
+    y += 5;
     const fechaEmision = new Date(datos.fechaPago).toLocaleDateString('es-PE', {
         year: 'numeric',
         month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+        day: 'numeric'
     });
-    doc.text(`Fecha de emisión: ${fechaEmision}`, pageWidth / 2, yPosition, { align: 'center' });
+    doc.text(`Fecha: ${fechaEmision}`, pageWidth / 2, y, { align: 'center' });
 
-    // ========== INFORMACIÓN DEL ESTUDIANTE ==========
-    yPosition += 10;
+    
+    y += 8;
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.5);
+    doc.line(20, y, pageWidth - 20, y);
+
+    
+    y += 10;
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(0, 0, 0);
-    doc.text('DATOS DEL ESTUDIANTE', 14, yPosition);
+    doc.text('DATOS DEL ESTUDIANTE', 20, y);
 
-    // Línea decorativa
-    doc.setDrawColor(79, 70, 229);
-    doc.setLineWidth(0.5);
-    doc.line(14, yPosition + 2, pageWidth - 14, yPosition + 2);
-
-    yPosition += 10;
-    doc.setFont('helvetica', 'normal');
+    y += 7;
     doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Apellidos y Nombres: ${datos.estudiante.apellidos}, ${datos.estudiante.nombres}`, 20, y);
 
-    const infoEstudiante = [
-        ['Apellidos y Nombres:', `${datos.estudiante.apellidos}, ${datos.estudiante.nombres}`],
-        ['DNI:', datos.estudiante.dni || 'N/A'],
-    ];
+    y += 6;
+    doc.text(`DNI: ${datos.estudiante.dni || 'N/A'}`, 20, y);
 
-    infoEstudiante.forEach(([label, value]) => {
-        doc.setFont('helvetica', 'bold');
-        doc.setTextColor(71, 85, 105); // Slate-600
-        doc.text(label, 20, yPosition);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(0, 0, 0);
-        doc.text(value, 70, yPosition);
-        yPosition += 6;
-    });
-
-    // ========== DETALLES DEL PAGO ==========
-    yPosition += 6;
-    doc.setFontSize(11);
+    
+    y += 12;
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(0, 0, 0);
-    doc.text('DETALLES DEL PAGO', 14, yPosition);
+    doc.setFontSize(11);
+    doc.text('DETALLE DEL PAGO', 20, y);
 
-    // Línea decorativa
-    doc.setDrawColor(79, 70, 229);
-    doc.setLineWidth(0.5);
-    doc.line(14, yPosition + 2, pageWidth - 14, yPosition + 2);
-
-    yPosition += 10;
-
-    // Tabla de detalles
+    y += 7;
     autoTable(doc, {
-        startY: yPosition,
+        startY: y,
         head: [['Concepto', 'Detalle']],
         body: [
-            ['Ciclo Académico', datos.ciclo.nombre],
-            ['Plan de Pago', datos.planPago.nombre],
+            ['Ciclo', datos.ciclo],
+            ['Plan de Pago', datos.planPago],
             ['Cuota', `#${datos.cuota.numero_cuota} - ${datos.cuota.concepto}`],
-            ['Fecha de Vencimiento', new Date(datos.cuota.fecha_vencimiento).toLocaleDateString('es-PE')],
-            ['Método de Pago', datos.metodoPago.toUpperCase()],
+            ['Vencimiento', new Date(datos.cuota.fecha_vencimiento).toLocaleDateString('es-PE')],
+            ['Método de Pago', datos.metodoPago],
         ],
-        theme: 'striped',
-        headStyles: {
-            fillColor: [79, 70, 229], // Indigo-600
-            textColor: [255, 255, 255],
-            fontStyle: 'bold',
-            fontSize: 10
-        },
-        bodyStyles: {
+        theme: 'plain',
+        styles: {
             fontSize: 9,
-            textColor: [0, 0, 0]
+            cellPadding: 3,
+        },
+        headStyles: {
+            fillColor: [240, 240, 240],
+            textColor: [0, 0, 0],
+            fontStyle: 'bold',
         },
         columnStyles: {
-            0: { fontStyle: 'bold', cellWidth: 60, textColor: [71, 85, 105] },
-            1: { cellWidth: 110 }
+            0: { fontStyle: 'bold', cellWidth: 50 },
+            1: { cellWidth: 120 }
         },
-        margin: { left: 14, right: 14 },
+        margin: { left: 20, right: 20 },
     });
 
-    // ========== RESUMEN FINANCIERO ==========
-    const tableEndY = (doc as any).lastAutoTable.finalY + 10;
+    
+    const tableEnd = (doc as any).lastAutoTable.finalY + 12;
 
-    // Caja de monto con diseño destacado
-    doc.setFillColor(79, 70, 229); // Indigo-600
-    doc.roundedRect(14, tableEndY, pageWidth - 28, 45, 4, 4, 'F');
+    
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1);
+    doc.rect(20, tableEnd, pageWidth - 40, 20);
 
-    // Monto pagado
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(11);
+    doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.text('MONTO PAGADO', pageWidth / 2, tableEndY + 10, { align: 'center' });
+    doc.text('MONTO PAGADO:', 25, tableEnd + 8);
 
-    doc.setFontSize(28);
-    doc.text(`S/ ${datos.montoPagado.toFixed(2)}`, pageWidth / 2, tableEndY + 25, { align: 'center' });
+    doc.setFontSize(16);
+    doc.text(`S/ ${datos.montoPagado.toFixed(2)}`, pageWidth - 25, tableEnd + 8, { align: 'right' });
 
-    // Estado del plan
-    doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
-    doc.text(`Plan: S/ ${datos.planPago.pagado.toFixed(2)} pagado de S/ ${datos.planPago.total.toFixed(2)}`, pageWidth / 2, tableEndY + 35, { align: 'center' });
-    doc.text(`Saldo pendiente: S/ ${datos.planPago.restante.toFixed(2)}`, pageWidth / 2, tableEndY + 41, { align: 'center' });
-
-    // ========== OBSERVACIONES ==========
-    yPosition = tableEndY + 55;
-    doc.setFillColor(254, 243, 199); // Amber-100
-    doc.roundedRect(14, yPosition, pageWidth - 28, 20, 3, 3, 'F');
-
+    
     const pageHeight = doc.internal.pageSize.getHeight();
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'italic');
+    doc.text('Este documento es un comprobante de pago válido.', pageWidth / 2, pageHeight - 20, { align: 'center' });
+    doc.text('Conserve este voucher para futuras consultas.', pageWidth / 2, pageHeight - 15, { align: 'center' });
 
-    doc.setDrawColor(203, 213, 225);
-    doc.setLineWidth(0.3);
-    doc.line(14, pageHeight - 25, pageWidth - 14, pageHeight - 25);
-
-
-    const nombreArchivo = `Voucher_${datos.numeroVoucher}_${datos.estudiante.apellidos.replace(/\s+/g, '_')}.pdf`;
+    
+    const nombreArchivo = `Voucher_${datos.numeroVoucher}.pdf`;
     doc.save(nombreArchivo);
 };

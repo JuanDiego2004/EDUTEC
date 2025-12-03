@@ -18,10 +18,7 @@ import {
 } from './conexionPostgres';
 import { v4 as uuidv4 } from 'uuid';
 
-/**
- * Gestor centralizado de conexiones con failover automático
- * Patrón Singleton para mantener estado global
- */
+
 class GestorConexionesBD {
     private static instancia: GestorConexionesBD;
     private estadoSistema: EstadoSistema;
@@ -40,9 +37,6 @@ class GestorConexionesBD {
         }
     }
 
-    /**
-     * Obtiene la instancia única del gestor (Singleton)
-     */
     public static obtenerInstancia(): GestorConexionesBD {
         if (!GestorConexionesBD.instancia) {
             GestorConexionesBD.instancia = new GestorConexionesBD();
@@ -50,10 +44,7 @@ class GestorConexionesBD {
         return GestorConexionesBD.instancia;
     }
 
-    /**
-     * Ejecuta una operación con failover automático
-     * Esta es la función principal que usarán todos los servicios
-     */
+
     public async ejecutarConFailover<T>(
         tipoBase: TipoBaseDatos,
         operacion: (cliente: any) => Promise<T>,
@@ -62,12 +53,12 @@ class GestorConexionesBD {
     ): Promise<T> {
         const config = this.estadoSistema[tipoBase];
 
-        // Verificar si estamos en modo mantenimiento
+        
         if (this.estadoSistema.modoMantenimiento) {
             throw new Error('Sistema en modo mantenimiento');
         }
 
-        // 1. Intentar con base primaria si está activa
+        
         if (config.estado === 'ACTIVA' && !config.usandoSecundaria) {
             try {
                 const clientePrimaria = await this.obtenerClientePrimaria(tipoBase);
@@ -79,7 +70,7 @@ class GestorConexionesBD {
                     console.log(` ${tipoBase} primaria respondió en ${tiempoRespuesta}ms`);
                 }
 
-                // Resetear errores consecutivos en caso de éxito
+                
                 config.erroresConsecutivos = 0;
                 return resultado;
 
@@ -89,13 +80,13 @@ class GestorConexionesBD {
             }
         }
 
-        // 2. Usar secundaria (ya sea porque primaria falló o ya estaba en modo failover)
+        
         if (config.usandoSecundaria) {
             try {
                 const clienteSecundaria = await this.obtenerClienteSecundaria(tipoBase);
                 const resultado = await operacion(clienteSecundaria);
 
-                // Si es operación de escritura, guardar en cola de sincronización
+                
                 if (esEscritura && metadataOperacion) {
                     this.agregarOperacionPendiente(tipoBase, {
                         id: uuidv4(),
@@ -116,7 +107,7 @@ class GestorConexionesBD {
                 return resultado;
 
             } catch (errorSecundaria) {
-                console.error(`🚨 CRÍTICO: Ambas bases ${tipoBase} han fallado`);
+                console.error(`CRÍTICO: Ambas bases ${tipoBase} han fallado`);
                 this.registrarEventoFailover({
                     tipo: 'FALLO_TOTAL',
                     baseDatos: tipoBase,
@@ -139,7 +130,7 @@ class GestorConexionesBD {
         config.erroresConsecutivos++;
         config.ultimoIntento = new Date();
 
-        // Cambiar a modo failover después de 2 fallos consecutivos
+        
         if (config.erroresConsecutivos >= 2) {
             console.log(`ACTIVANDO FAILOVER para ${tipoBase}...`);
             config.estado = 'CAIDA';
@@ -152,7 +143,7 @@ class GestorConexionesBD {
                 detalles: `Primaria caída después de ${config.erroresConsecutivos} intentos: ${error.message}`
             });
 
-            // Iniciar verificación de recuperación en segundo plano
+            
             this.iniciarVerificacionRecuperacion(tipoBase);
         }
     }
@@ -161,7 +152,7 @@ class GestorConexionesBD {
      * Inicia un proceso de verificación periódica para detectar recuperación
      */
     private iniciarVerificacionRecuperacion(tipoBase: TipoBaseDatos): void {
-        // Evitar múltiples intervalos para la misma base
+        
         if (this.intervalosVerificacion.has(tipoBase)) {
             return;
         }
@@ -179,11 +170,11 @@ class GestorConexionesBD {
                 if (resultado.estaActiva) {
                     console.log(` ${tipoBase} primaria recuperada! Iniciando sincronización...`);
 
-                    // Detener el chequeo
+                    
                     clearInterval(intervalId);
                     this.intervalosVerificacion.delete(tipoBase);
 
-                    // Iniciar sincronización
+                    
                     await this.sincronizarDatosPendientes(tipoBase);
                 }
 
@@ -203,7 +194,7 @@ class GestorConexionesBD {
     private async sincronizarDatosPendientes(tipoBase: TipoBaseDatos): Promise<void> {
         const config = this.estadoSistema[tipoBase];
 
-        // Cambiar estado a SINCRONIZANDO
+        
         config.estado = 'SINCRONIZANDO';
 
         const totalOperaciones = config.colaPendientes.length;
@@ -225,10 +216,10 @@ class GestorConexionesBD {
             }
         }
 
-        // Limpiar operaciones exitosas de la cola
+        
         config.colaPendientes = config.colaPendientes.filter(op => op.error);
 
-        // Restaurar estado normal
+        
         config.usandoSecundaria = false;
         config.estado = 'ACTIVA';
         config.erroresConsecutivos = 0;
@@ -259,13 +250,13 @@ class GestorConexionesBD {
 
             switch (operacion.tipo) {
                 case 'INSERT':
-                    // Lógica de INSERT
+                    
                     break;
                 case 'UPDATE':
-                    // Lógica de UPDATE
+                    
                     break;
                 case 'DELETE':
-                    // Lógica de DELETE
+                    
                     break;
             }
         } else if (tipoBase === 'mongodb') {
@@ -320,7 +311,7 @@ class GestorConexionesBD {
         }
     }
 
-    // Métodos auxiliares
+    
 
     private async obtenerClientePrimaria(tipoBase: TipoBaseDatos): Promise<any> {
         if (tipoBase === 'postgres') {
@@ -343,7 +334,7 @@ class GestorConexionesBD {
     }
 
     private registrarEventoFailover(evento: EventoFailover): void {
-        // Aquí puedes guardar en un sistema de logging o base de datos
+        
         console.log(' Evento Failover:', evento);
     }
 
@@ -381,5 +372,5 @@ class GestorConexionesBD {
     }
 }
 
-// Exportar instancia única
+
 export const gestorDB = GestorConexionesBD.obtenerInstancia();

@@ -20,7 +20,7 @@ const RegistrarPago = () => {
     metodo_pago: "efectivo" as const,
   });
   const [selectedCuota, setSelectedCuota] = useState<any>(null);
-  const [selectedEstudiante, setSelectedEstudiante] = useState<any>(null); 
+  const [selectedEstudiante, setSelectedEstudiante] = useState<any>(null);
 
   const { data: cuotasDisponibles, isLoading: loadingCuotas, error: errorCuotas } = useQuery({
     queryKey: ["cuotas-disponibles", formData.estudiante_id],
@@ -30,9 +30,9 @@ const RegistrarPago = () => {
       console.log(" Buscando cuotas para estudiante:", formData.estudiante_id);
       const cliente = supabaseFailover.getDirectClient();
 
-      
 
-      
+
+
       let planId = null;
       let planNombre = null;
 
@@ -56,7 +56,7 @@ const RegistrarPago = () => {
         console.log(" Plan encontrado directamente:", planNombre, "ID:", planId);
       }
 
-      
+
       if (!planId) {
         console.log(" No se encontró plan directo, buscando vía matrícula...");
         const { data: matriculas, error: errorMatriculas } = await cliente
@@ -85,7 +85,7 @@ const RegistrarPago = () => {
         return [];
       }
 
-      
+
       console.log("🔎 Buscando cuotas para plan:", planId);
       const { data: cuotas, error: cuotasError } = await cliente
         .from("cuotas_pago")
@@ -106,7 +106,7 @@ const RegistrarPago = () => {
         return [];
       }
 
-      
+
       const cuotasEnriquecidas = cuotas?.map(c => ({
         ...c,
         planes_pago: { nombre: planNombre }
@@ -134,7 +134,7 @@ const RegistrarPago = () => {
 
       const cliente = supabaseFailover.getDirectClient();
 
-      
+
       const { data: cuotaInfo, error: cuotaError } = await cliente
         .from("cuotas_pago")
         .select("*, planes_pago(estudiante_id, ciclo_academico_id)")
@@ -148,7 +148,7 @@ const RegistrarPago = () => {
 
       console.log("📋 Información de cuota:", cuotaInfo);
 
-      
+
       const estudianteId = (cuotaInfo.planes_pago as any).estudiante_id;
       const { data: estudianteInfo, error: estudianteError } = await cliente
         .from("estudiantes")
@@ -161,7 +161,7 @@ const RegistrarPago = () => {
         throw new Error("No se pudo obtener la información del estudiante");
       }
 
-      
+
       const pagoPayload = {
         estudiante_id: estudianteId,
         sede_id: estudianteInfo.sede_id,
@@ -183,7 +183,7 @@ const RegistrarPago = () => {
 
       console.log(" Pago registrado en AMBAS bases de datos:", pagoData);
 
-      
+
       const { error: updateError } = await supabaseFailover.update("cuotas_pago", newPago.cuota_id, {
         estado: "pagado",
         fecha_pago: new Date().toISOString(),
@@ -205,7 +205,7 @@ const RegistrarPago = () => {
     onSuccess: async (data: any) => {
       console.log("🎉 Pago completado exitosamente:", data);
 
-      
+
       try {
         if (selectedCuota && formData.estudiante_id) {
           const cliente = supabaseFailover.getDirectClient();
@@ -215,7 +215,7 @@ const RegistrarPago = () => {
             return;
           }
 
-          
+
           const { data: planData } = await cliente
             .from("planes_pago")
             .select(`
@@ -231,7 +231,7 @@ const RegistrarPago = () => {
           if (planData) {
             const estudiante = selectedEstudiante;
 
-            
+
             const numeroVoucher = `VP-${new Date().getFullYear()}-${String(data.pago_id).padStart(6, '0')}`;
 
             const voucherData = {
@@ -242,17 +242,8 @@ const RegistrarPago = () => {
                 dni: estudiante.dni,
                 codigo: estudiante.codigo,
               },
-              ciclo: {
-                nombre: (planData.ciclos_academicos as any).nombre,
-                fecha_inicio: (planData.ciclos_academicos as any).fecha_inicio,
-                fecha_fin: (planData.ciclos_academicos as any).fecha_fin,
-              },
-              planPago: {
-                nombre: planData.nombre,
-                total: planData.total,
-                pagado: planData.pagado + selectedCuota.monto, 
-                restante: planData.restante - selectedCuota.monto,
-              },
+              ciclo: (planData.ciclos_academicos as any)?.nombre || 'N/A',
+              planPago: planData.nombre || 'N/A',
               cuota: {
                 numero_cuota: selectedCuota.numero_cuota,
                 concepto: selectedCuota.concepto,
@@ -356,7 +347,7 @@ const RegistrarPago = () => {
                     onValueChange={(value) => {
                       setFormData({ ...formData, estudiante_id: value, cuota_id: "" });
                       setSelectedCuota(null);
-                      
+
                       const estudianteSeleccionado = (estudiantes as any[])?.find(est => est.id === value);
                       setSelectedEstudiante(estudianteSeleccionado);
                       console.log("Estudiante seleccionado guardado:", estudianteSeleccionado);

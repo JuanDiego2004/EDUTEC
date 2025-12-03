@@ -1,10 +1,4 @@
-/**
- * VERSIÓN MEJORADA: Wrapper de Supabase con replicación DUAL
- * - Lecturas: Primaria → Secundaria (failover automático)
- * - Escrituras: AMBAS bases simultáneamente
- * 
- * Esto garantiza que ambas bases siempre tengan los mismos datos
- */
+
 
 import { obtenerClienteSupabasePrimario, obtenerClienteSupabaseSecundario } from "./conexionPostgres";
 
@@ -18,43 +12,24 @@ export interface SingleResult<T> {
     error: any;
 }
 
-/**
- * Estado interno para tracking de cual Supabase usar para LECTURAS
- */
+
 let usandoSecundaria = false;
 let erroresConsecutivos = 0;
 
-/**
- * Timestamp del último failover detectado
- * Se usa para sincronización automática cuando la primaria se recupera
- */
 let timestampUltimoFailover: Date | null = null;
 
-/**
- * Función para notificar recuperación de primaria
- * Se puede customizar para ejecutar lógica adicional
- */
 let onPrimariaRecuperada: ((timestamp: Date) => void) | null = null;
 
-/**
- * Registra callback para cuando se detecte recuperación de primaria
- */
 export function registrarCallbackRecuperacion(callback: (timestamp: Date) => void) {
     onPrimariaRecuperada = callback;
 }
 
-/**
- * Obtiene el timestamp del último failover (si ocurrió)
- */
 export function obtenerTimestampFailover(): Date | null {
     return timestampUltimoFailover;
 }
 
 export const supabaseFailover = {
-    /**
-     * SELECT con failover automático
-     * Primaria → Secundaria si falla
-     */
+
     async select<T = any>(
         tabla: string,
         opciones?: {
@@ -64,9 +39,10 @@ export const supabaseFailover = {
             limite?: number;
         }
     ): Promise<QueryResult<T>> {
-        try {
-            // Intentar con primaria primero si no estamos en modo failover
-            if (!usandoSecundaria) {
+        
+        if (!usandoSecundaria) {
+            try {
+                console.log(`📊 [SELECT] Intentando con PRIMARIA: ${tabla}`);
                 const cliente = obtenerClienteSupabasePrimario();
                 let query = cliente.from(tabla).select(opciones?.seleccion || '*');
 
@@ -87,14 +63,15 @@ export const supabaseFailover = {
                 const resultado = await query;
 
                 if (!resultado.error) {
+                    console.log(` [SELECT] PRIMARIA exitosa: ${tabla}`);
                     erroresConsecutivos = 0;
 
-                    // Si estábamos en failover y ahora funciona, la primaria se recuperó
+                    
                     if (usandoSecundaria) {
-                        console.log('🎉 PRIMARIA RECUPERADA - Iniciando sincronización automática');
+                        console.log('🎉 PRIMARIA RECUPERADA - Reiniciando modo normal');
                         usandoSecundaria = false;
 
-                        // Notificar recuperación si hay callback registrado
+                        
                         if (onPrimariaRecuperada && timestampUltimoFailover) {
                             onPrimariaRecuperada(timestampUltimoFailover);
                         }
@@ -108,22 +85,45 @@ export const supabaseFailover = {
                     };
                 }
 
-                // Si falla, marcar para usar secundaria
+                
+                console.warn(` [SELECT] PRIMARIA retornó error: ${tabla}`, resultado.error);
                 erroresConsecutivos++;
-                if (erroresConsecutivos >= 2) {
-                    console.warn(' Supabase primario falló, cambiando a secundario');
 
-                    // Guardar timestamp del failover
+                if (erroresConsecutivos >= 2) {
+                    console.warn(`🔄 [FAILOVER] Cambiando a SECUNDARIA después de ${erroresConsecutivos} errores`);
+
                     if (!usandoSecundaria && !timestampUltimoFailover) {
                         timestampUltimoFailover = new Date();
-                        console.warn(`⏰ Timestamp de failover guardado: ${timestampUltimoFailover.toISOString()}`);
+                        console.warn(`Timestamp de failover: ${timestampUltimoFailover.toISOString()}`);
                     }
 
                     usandoSecundaria = true;
                 }
-            }
+            } catch (error: any) {
+                
+                console.error(` [SELECT] PRIMARIA falló completamente (network error): ${tabla}`, error);
+                console.error(`Error type: ${error?.name}, Message: ${error?.message}`);
 
-            // Usar secundaria
+                
+                if (!usandoSecundaria) {
+                    console.warn('[FAILOVER INMEDIATO] Error de conexión detectado, cambiando a SECUNDARIA');
+
+                    if (!timestampUltimoFailover) {
+                        timestampUltimoFailover = new Date();
+                        console.warn(`Timestamp de failover: ${timestampUltimoFailover.toISOString()}`);
+                    }
+
+                    usandoSecundaria = true;
+                    erroresConsecutivos = 999; 
+                }
+
+                
+            }
+        }
+
+        
+        try {
+            console.log(`📊 [SELECT] Usando SECUNDARIA: ${tabla}`);
             const clienteSecundario = obtenerClienteSupabaseSecundario();
             let query = clienteSecundario.from(tabla).select(opciones?.seleccion || '*');
 
@@ -143,20 +143,23 @@ export const supabaseFailover = {
 
             const resultado = await query;
 
+            if (!resultado.error) {
+                console.log(` [SELECT] SECUNDARIA exitosa: ${tabla}`);
+            } else {
+                console.error(` [SELECT] SECUNDARIA también falló: ${tabla}`, resultado.error);
+            }
+
             return {
                 data: resultado.error ? null : (resultado.data as unknown) as T[],
                 error: resultado.error
             };
         } catch (error) {
-            console.error(`Error en SELECT de ${tabla}:`, error);
+            console.error(` [SELECT] SECUNDARIA falló completamente (network error): ${tabla}`, error);
             return { data: null, error };
         }
     },
 
-    /**
-     * INSERT en AMBAS bases de datos simultáneamente
-     * IMPORTANTE: Genera el ID en el cliente para asegurar que ambas bases usen el mismo
-     */
+ 
     async insert<T = any>(
         tabla: string,
         datos: any | any[]
@@ -164,36 +167,36 @@ export const supabaseFailover = {
         try {
             console.log(`INSERT dual en tabla: ${tabla}`);
 
-            // Generar IDs en el cliente para asegurar consistencia entre bases
+            
             const datosConId = Array.isArray(datos) ? datos : [datos];
             const datosPreparados = datosConId.map((item: any) => {
-                // Si ya tiene ID, usarlo; si no, generar uno nuevo
+                
                 if (!item.id) {
                     return {
                         ...item,
-                        id: crypto.randomUUID() // Genera UUID v4 en el cliente
+                        id: crypto.randomUUID() 
                     };
                 }
                 return item;
             });
 
-            // Insertar en AMBAS bases simultáneamente CON EL MISMO ID
+            
             const [resultadoPrimaria, resultadoSecundaria] = await Promise.allSettled([
                 obtenerClienteSupabasePrimario().from(tabla).insert(datosPreparados).select(),
                 obtenerClienteSupabaseSecundario().from(tabla).insert(datosPreparados).select()
             ]);
 
-            // Verificar resultado de primaria
+            
             if (resultadoPrimaria.status === 'fulfilled' && !resultadoPrimaria.value.error) {
                 console.log(` INSERT exitoso en PRIMARIA: ${tabla}`);
                 erroresConsecutivos = 0;
 
-                // Verificar secundaria
+                
                 if (resultadoSecundaria.status === 'fulfilled' && !resultadoSecundaria.value.error) {
                     console.log(` INSERT exitoso en SECUNDARIA: ${tabla}`);
                 } else {
                     console.warn(` INSERT falló en SECUNDARIA: ${tabla}`, resultadoSecundaria);
-                    // Continuar de todas formas, se sincronizará después
+                    
                 }
 
                 return {
@@ -202,11 +205,11 @@ export const supabaseFailover = {
                 };
             }
 
-            // Si primaria falla, usar solo secundaria
+            
             const errorPrim = resultadoPrimaria.status === 'rejected'
                 ? resultadoPrimaria.reason
                 : resultadoPrimaria.value.error;
-            console.error(`INSERT falló en PRIMARIA: ${tabla}`, errorPrim);
+            console.warn(` INSERT falló en PRIMARIA: ${tabla}`, errorPrim);
             if (resultadoSecundaria.status === 'fulfilled' && !resultadoSecundaria.value.error) {
                 console.log(` INSERT exitoso en SECUNDARIA (primaria falló): ${tabla}`);
                 usandoSecundaria = true;
@@ -216,20 +219,18 @@ export const supabaseFailover = {
                 };
             }
 
-            // Ambas fallaron
+            
+            console.error(` INSERT falló en AMBAS bases: ${tabla}`);
             return {
                 data: null,
                 error: resultadoPrimaria.status === 'rejected' ? resultadoPrimaria.reason : resultadoPrimaria.value.error
             };
         } catch (error) {
-            console.error(`Error inesperado en INSERT de ${tabla}:`, error);
+            console.warn(` Excepción en INSERT de ${tabla}:`, error);
             return { data: null, error };
         }
     },
 
-    /**
-     * INSERT single (retorna un solo objeto)
-     */
     async insertSingle<T = any>(
         tabla: string,
         datos: any
@@ -241,9 +242,6 @@ export const supabaseFailover = {
         };
     },
 
-    /**
-     * UPDATE en AMBAS bases de datos simultáneamente
-     */
     async update<T = any>(
         tabla: string,
         id: string,
@@ -252,26 +250,25 @@ export const supabaseFailover = {
         try {
             console.log(`UPDATE dual en tabla: ${tabla}, id: ${id}`);
 
-            // Actualizar en AMBAS bases simultáneamente
+            
             const [resultadoPrimaria, resultadoSecundaria] = await Promise.allSettled([
                 obtenerClienteSupabasePrimario().from(tabla).update(datos).eq('id', id).select(),
                 obtenerClienteSupabaseSecundario().from(tabla).update(datos).eq('id', id).select()
             ]);
 
-            // Verificar resultado de primaria
+            
             if (resultadoPrimaria.status === 'fulfilled' && !resultadoPrimaria.value.error) {
                 console.log(` UPDATE exitoso en PRIMARIA: ${tabla}`);
                 erroresConsecutivos = 0;
 
-                // Verificar secundaria
+                
                 if (resultadoSecundaria.status === 'fulfilled' && !resultadoSecundaria.value.error) {
                     console.log(` UPDATE exitoso en SECUNDARIA: ${tabla}`);
                 } else {
                     const errorSecundaria = resultadoSecundaria.status === 'rejected'
                         ? resultadoSecundaria.reason
                         : resultadoSecundaria.value.error;
-                    console.error(`UPDATE falló en SECUNDARIA: ${tabla}`, errorSecundaria);
-                    console.error('Detalles del error secundaria:', JSON.stringify(errorSecundaria, null, 2));
+                    console.warn(` UPDATE falló en SECUNDARIA: ${tabla}`, errorSecundaria);
                 }
 
                 return {
@@ -280,7 +277,8 @@ export const supabaseFailover = {
                 };
             }
 
-            // Si primaria falla, usar solo secundaria
+            
+            console.warn(` UPDATE falló en PRIMARIA: ${tabla}`);
             if (resultadoSecundaria.status === 'fulfilled' && !resultadoSecundaria.value.error) {
                 console.log(` UPDATE exitoso en SECUNDARIA (primaria falló): ${tabla}`);
                 usandoSecundaria = true;
@@ -290,95 +288,165 @@ export const supabaseFailover = {
                 };
             }
 
-            // Ambas fallaron
+            
+            console.error(` UPDATE falló en AMBAS bases: ${tabla}`);
             return {
                 data: null,
                 error: resultadoPrimaria.status === 'rejected' ? resultadoPrimaria.reason : resultadoPrimaria.value.error
             };
         } catch (error) {
-            console.error(`Error inesperado en UPDATE de ${tabla}:`, error);
+            console.warn(` Excepción en UPDATE de ${tabla}:`, error);
             return { data: null, error };
         }
     },
 
-    /**
-     * DELETE en AMBAS bases de datos simultáneamente
-     */
+
     async delete(
         tabla: string,
         id: string
     ): Promise<{ error: any }> {
+        console.log(`🗑️ [DELETE] Iniciando delete en tabla: ${tabla}, id: ${id}`);
+
+        
+        if (usandoSecundaria) {
+            console.log(`📍 [DELETE] Usando SOLO SECUNDARIA (modo failover activo)`);
+            try {
+                const { error } = await obtenerClienteSupabaseSecundario()
+                    .from(tabla)
+                    .delete()
+                    .eq('id', id);
+
+                if (!error) {
+                    console.log(` [DELETE] SECUNDARIA exitosa: ${tabla}`);
+                    return { error: null };
+                }
+
+                console.error(` [DELETE] SECUNDARIA falló: ${tabla}`, error);
+                return { error };
+            } catch (error: any) {
+                console.error(` [DELETE] Excepción en SECUNDARIA: ${tabla}`, error);
+                return { error };
+            }
+        }
+
+        
         try {
-            console.log(`DELETE dual en tabla: ${tabla}, id: ${id}`);
+            console.log(`📍 [DELETE] Intentando con PRIMARIA...`);
 
-            // Eliminar en AMBAS bases simultáneamente
-            const [resultadoPrimaria, resultadoSecundaria] = await Promise.allSettled([
-                obtenerClienteSupabasePrimario().from(tabla).delete().eq('id', id),
-                obtenerClienteSupabaseSecundario().from(tabla).delete().eq('id', id)
-            ]);
+            const { error: errorPrimaria } = await obtenerClienteSupabasePrimario()
+                .from(tabla)
+                .delete()
+                .eq('id', id);
 
-            // Verificar resultados
-            const primOk = resultadoPrimaria.status === 'fulfilled' && !resultadoPrimaria.value.error;
-            const secOk = resultadoSecundaria.status === 'fulfilled' && !resultadoSecundaria.value.error;
+            if (!errorPrimaria) {
+                console.log(` [DELETE] PRIMARIA exitosa: ${tabla}`);
 
-            if (primOk) {
-                console.log(` DELETE exitoso en PRIMARIA: ${tabla}`);
-            } else {
-                const errorPrim = resultadoPrimaria.status === 'rejected'
-                    ? resultadoPrimaria.reason
-                    : resultadoPrimaria.value.error;
-                console.error(`DELETE falló en PRIMARIA: ${tabla}`, errorPrim);
-            }
+                
+                try {
+                    await obtenerClienteSupabaseSecundario()
+                        .from(tabla)
+                        .delete()
+                        .eq('id', id);
+                    console.log(` [DELETE] SECUNDARIA también exitosa: ${tabla}`);
+                } catch (err) {
+                    console.warn(` [DELETE] Secundaria falló (pero primaria ok): ${tabla}`);
+                }
 
-            if (secOk) {
-                console.log(` DELETE exitoso en SECUNDARIA: ${tabla}`);
-            } else {
-                const errorSec = resultadoSecundaria.status === 'rejected'
-                    ? resultadoSecundaria.reason
-                    : resultadoSecundaria.value.error;
-                console.error(`DELETE falló en SECUNDARIA: ${tabla}`, errorSec);
-                console.error('Detalles del error secundaria:', JSON.stringify(errorSec, null, 2));
-            }
-
-            if (primOk || secOk) {
                 return { error: null };
             }
 
-            // Ambas fallaron
-            return {
-                error: resultadoPrimaria.status === 'rejected' ? resultadoPrimaria.reason : resultadoPrimaria.value.error
-            };
-        } catch (error) {
-            console.error(`Error inesperado en DELETE de ${tabla}:`, error);
-            return { error };
+            
+            console.warn(` [DELETE] PRIMARIA retornó error: ${tabla}`, errorPrimaria);
+
+            
+            const { error: errorSecundaria } = await obtenerClienteSupabaseSecundario()
+                .from(tabla)
+                .delete()
+                .eq('id', id);
+
+            if (!errorSecundaria) {
+                console.log(` [DELETE] SECUNDARIA exitosa (primaria falló): ${tabla}`);
+                return { error: null };
+            }
+
+            
+            console.error(` [DELETE] Ambas bases fallaron: ${tabla}`);
+            return { error: errorPrimaria };
+
+        } catch (error: any) {
+            
+            console.warn(` [DELETE] Primaria lanzó excepción (network error): ${tabla}`, error);
+
+            
+            if (error?.message?.includes('Failed to fetch') ||
+                error?.message?.includes('NetworkError') ||
+                error?.name === 'TypeError') {
+
+                console.warn(`[DELETE] Activando failover por error de red`);
+                usandoSecundaria = true;
+                erroresConsecutivos = 999;
+
+                if (!timestampUltimoFailover) {
+                    timestampUltimoFailover = new Date();
+                }
+            }
+
+            
+            try {
+                const { error: errorSecundaria } = await obtenerClienteSupabaseSecundario()
+                    .from(tabla)
+                    .delete()
+                    .eq('id', id);
+
+                if (!errorSecundaria) {
+                    console.log(` [DELETE] SECUNDARIA exitosa (primaria con excepción): ${tabla}`);
+                    return { error: null };
+                }
+
+                console.error(` [DELETE] SECUNDARIA también falló: ${tabla}`, errorSecundaria);
+                return { error: errorSecundaria };
+            } catch (error2) {
+                console.error(` [DELETE] Excepción en SECUNDARIA también: ${tabla}`, error2);
+                return { error: error2 };
+            }
         }
     },
 
-    /**
-     * Cliente directo (para operaciones especiales como JOINs)
-     * IMPORTANTE: Esto solo retorna UNA base, para operaciones avanzadas
-     * que requieren sintaxis específica de Supabase
-     */
+
     getDirectClient() {
-        return usandoSecundaria ? obtenerClienteSupabaseSecundario() : obtenerClienteSupabasePrimario();
+        const cliente = usandoSecundaria ? obtenerClienteSupabaseSecundario() : obtenerClienteSupabasePrimario();
+        const tipo = usandoSecundaria ? 'SECUNDARIA' : 'PRIMARIA';
+        console.log(`🔌 [getDirectClient] Retornando cliente ${tipo}`);
+        return cliente;
     },
 
-    /**
-     * Información de estado
-     */
     getStatus() {
         return {
             usandoSecundaria,
-            erroresConsecutivos
+            erroresConsecutivos,
+            timestampFailover: timestampUltimoFailover
         };
     },
 
-    /**
-     * Restablecer estado (útil para testing o recuperación manual)
-     */
+
+    forceFailover(reason?: string) {
+        if (!usandoSecundaria) {
+            console.warn(`[FAILOVER FORZADO] ${reason || 'Razón no especificada'}`);
+            usandoSecundaria = true;
+            erroresConsecutivos = 999;
+
+            if (!timestampUltimoFailover) {
+                timestampUltimoFailover = new Date();
+                console.warn(`Timestamp de failover: ${timestampUltimoFailover.toISOString()}`);
+            }
+        }
+    },
+
+
     reset() {
         usandoSecundaria = false;
         erroresConsecutivos = 0;
-        console.log('Estado de failover restablecido');
+        timestampUltimoFailover = null;
+        console.log('♻️ Estado de failover restablecido');
     }
 };

@@ -1,4 +1,4 @@
-// services/activityLogger.ts
+
 
 export type ActivityModule =
   | 'profesores'
@@ -43,10 +43,7 @@ interface ModuleLogParams {
 }
 
 export const activityLogger = {
-  /**
-   * Log genérico para cualquier módulo
-   * Los logs se guardan en la colección centralizada 'logs' en la BD 'reyna_de_la_paz'
-   */
+
   async log(params: ModuleLogParams) {
     try {
       const logData = {
@@ -84,9 +81,7 @@ export const activityLogger = {
     }
   },
 
-  /**
-   * Log de creación de entidad
-   */
+
   async logCreate(
     userId: string,
     userEmail: string,
@@ -110,9 +105,6 @@ export const activityLogger = {
     });
   },
 
-  /**
-   * Log de actualización de entidad
-   */
   async logUpdate(
     userId: string,
     userEmail: string,
@@ -138,9 +130,7 @@ export const activityLogger = {
     });
   },
 
-  /**
-   * Log de eliminación de entidad
-   */
+
   async logDelete(
     userId: string,
     userEmail: string,
@@ -164,9 +154,6 @@ export const activityLogger = {
     });
   },
 
-  /**
-   * Log de visualización
-   */
   async logView(
     userId: string,
     userEmail: string,
@@ -187,9 +174,6 @@ export const activityLogger = {
     });
   },
 
-  /**
-   * Log de inicio de sesión exitoso
-   */
   async logLogin(userId: string, email: string, role: string) {
     return this.log({
       idUsuario: userId,
@@ -202,9 +186,7 @@ export const activityLogger = {
     });
   },
 
-  /**
-   * Log de cierre de sesión
-   */
+
   async logLogout(userId: string, email: string, role: string) {
     return this.log({
       idUsuario: userId,
@@ -217,9 +199,7 @@ export const activityLogger = {
     });
   },
 
-  /**
-   * Log de pago
-   */
+
   async logPayment(
     userId: string,
     userEmail: string,
@@ -233,19 +213,16 @@ export const activityLogger = {
       idUsuario: userId,
       correoUsuario: userEmail,
       rolUsuario: userRole,
-      tipoActividad: 'crear', // Asumimos crear pago
+      tipoActividad: 'crear', 
       modulo: 'pagos',
       descripcion: `Pago de $${amount} por ${concept} (${paymentMethod})`,
       exito: true,
       idEntidad: studentId,
-      tipoEntidad: 'estudiante', // O 'pago' si tuviéramos ID de pago
+      tipoEntidad: 'estudiante', 
       datosNuevos: { amount, paymentMethod, concept },
     });
   },
 
-  /**
-   * Log de inicio de sesión fallido
-   */
   async logFailedLogin(email: string, errorMessage: string) {
     return this.log({
       idUsuario: 'N/A',
@@ -259,9 +236,7 @@ export const activityLogger = {
     });
   },
 
-  /**
-   * Log de error genérico
-   */
+
   async logError(
     userId: string,
     userEmail: string,
@@ -274,7 +249,7 @@ export const activityLogger = {
       idUsuario: userId,
       correoUsuario: userEmail,
       rolUsuario: userRole,
-      tipoActividad: 'ver', // Usamos 'ver' como tipo genérico para errores si no hay uno específico
+      tipoActividad: 'ver', 
       modulo: module,
       descripcion: `Error: ${errorMessage}`,
       exito: false,

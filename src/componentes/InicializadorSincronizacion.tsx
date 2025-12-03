@@ -12,13 +12,13 @@ import { registrarCallbackRecuperacion } from '@/servicios/base-datos/supabaseCo
 
 export function InicializadorSincronizacion() {
     useEffect(() => {
-        // Registrar callback que se ejecuta cuando la primaria se recupera
+        
         registrarCallbackRecuperacion(async (timestampFailover: Date) => {
             console.log('Ejecutando sincronización automática...');
-            console.log(`⏰ Failover ocurrió en: ${timestampFailover.toISOString()}`);
+            console.log(`Failover ocurrió en: ${timestampFailover.toISOString()}`);
 
             try {
-                // Llamar al endpoint de sincronización
+                
                 const response = await fetch('/api/sync-recovery', {
                     method: 'POST',
                     headers: {
@@ -33,7 +33,7 @@ export function InicializadorSincronizacion() {
                     const data = await response.json();
                     console.log(' Sincronización automática completada:', data);
 
-                    // Opcional: Mostrar notificación al usuario
+                    
                     if (data.totalNuevos > 0) {
                         console.log(` ${data.totalNuevos} registros sincronizados desde secundaria`);
                     }
@@ -48,5 +48,5 @@ export function InicializadorSincronizacion() {
         console.log(' Sistema de sincronización automática inicializado');
     }, []);
 
-    return null; // Este componente no renderiza nada
+    return null; 
 }

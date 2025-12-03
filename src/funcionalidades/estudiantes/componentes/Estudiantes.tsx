@@ -367,15 +367,14 @@ const Estudiantes = () => {
     apoderado_fecha_nacimiento: null,
   });
 
-  
+
   const { data: estudiantes, isLoading, error: queryError } = useQuery({
     queryKey: ["estudiantes"],
     queryFn: async () => {
-      console.log(" [Estudiantes Query] Ejecutando query...");
+      console.log("📚 [Estudiantes Query] Ejecutando query...");
+
       try {
-        
         const cliente = supabaseFailover.getDirectClient();
-        console.log(" [Estudiantes Query] Cliente obtenido:", !!cliente);
 
         const { data, error } = await cliente
           .from("estudiantes")
@@ -383,22 +382,53 @@ const Estudiantes = () => {
           .order("created_at", { ascending: false });
 
         if (error) {
-          console.error("[Estudiantes Query] Error:", error);
+          console.error(" [Estudiantes Query] Error:", error);
           throw error;
         }
 
-        console.log(" [Estudiantes Query] Datos obtenidos:", data?.length || 0, "estudiantes");
+        console.log(` [Estudiantes Query] Datos obtenidos: ${data?.length || 0} estudiantes`);
         return data;
-      } catch (err) {
-        console.error("[Estudiantes Query] Excepción:", err);
+      } catch (err: any) {
+        console.error(" [Estudiantes Query] Excepción capturada:", err);
+
+        // Si es un error de red (Failed to fetch, CORS, etc.), forzar failover
+        if (err?.message?.includes('Failed to fetch') ||
+          err?.message?.includes('NetworkError') ||
+          err?.message?.includes('CORS') ||
+          err?.name === 'TypeError') {
+
+          console.warn("[Estudiantes] Error de red detectado, activando failover...");
+
+          // Forzar cambio a secundaria
+          supabaseFailover.forceFailover('Error de red en query de estudiantes');
+
+          // Reintentar con el nuevo cliente (ahora será secundaria)
+          const clienteSecundario = supabaseFailover.getDirectClient();
+          const { data, error } = await clienteSecundario
+            .from("estudiantes")
+            .select("*, sedes(nombre, ciudad)")
+            .order("created_at", { ascending: false });
+
+          if (!error) {
+            console.log(` [Estudiantes Query] Reintento con SECUNDARIA exitoso: ${data?.length || 0} estudiantes`);
+            return data;
+          }
+
+          console.error(" [Estudiantes Query] SECUNDARIA también falló:", error);
+          throw error;
+        }
+
         throw err;
       }
     },
-    
+
     enabled: typeof window !== 'undefined',
+    retry: false, // Deshabilitamos retry de React Query porque manejamos failover manualmente
+    staleTime: 30000, // Cache por 30 segundos
   });
 
-  
+
+
   const { data: sedes } = useQuery({
     queryKey: ["sedes"],
     queryFn: async () => {
@@ -410,7 +440,7 @@ const Estudiantes = () => {
     enabled: typeof window !== 'undefined',
   });
 
-  
+
   const createMutation = useMutation({
     mutationFn: async (newEstudiante: Estudiante) => {
       const { data, error } = await supabaseFailover.insertSingle("estudiantes", newEstudiante);
@@ -421,7 +451,7 @@ const Estudiantes = () => {
       queryClient.invalidateQueries({ queryKey: ["estudiantes"] });
       toast.success("Estudiante registrado exitosamente");
 
-      
+
       if (nuevo) {
         await logCreate(
           'estudiantes',
@@ -439,7 +469,7 @@ const Estudiantes = () => {
     },
   });
 
-  
+
   const updateMutation = useMutation({
     mutationFn: async (estudianteData: EstudianteUpdate) => {
       const { data, error } = await supabaseFailover.update("estudiantes", estudianteData.id, estudianteData);
@@ -450,7 +480,7 @@ const Estudiantes = () => {
       queryClient.invalidateQueries({ queryKey: ["estudiantes"] });
       toast.success("Estudiante actualizado exitosamente");
 
-      
+
       if (selectedEstudiante && actualizado) {
         await logUpdate(
           'estudiantes',
@@ -469,10 +499,11 @@ const Estudiantes = () => {
     },
   });
 
-  
+
   const deleteMutation = useMutation({
     mutationFn: async ({ id, estudianteData }: { id: string; estudianteData: any }) => {
-      const supabase = supabaseFailover.getDirectClient();
+      console.log(`🗑️ [DELETE CASCADA] Iniciando eliminación de estudiante: ${id}`);
+
       let deletedCounts = {
         pagos: 0,
         cuotas: 0,
@@ -482,126 +513,179 @@ const Estudiantes = () => {
         profiles: 0
       };
 
-      
-      const { data: ventas } = await supabase
-        .from("ventas_inventario")
-        .select("id")
-        .eq("estudiante_id", id);
+      // Función auxiliar para hacer queries con failover
+      const queryConFailover = async (tabla: string, filtros: Record<string, any>) => {
+        console.log(`🔍 [QUERY] Consultando ${tabla} con filtros:`, filtros);
 
-      if (ventas && ventas.length > 0) {
-        console.log(`Eliminando ${ventas.length} ventas de inventario...`);
-        for (const venta of ventas) {
-          await supabaseFailover.delete("ventas_inventario", venta.id);
-        }
-      }
+        try {
+          const cliente = supabaseFailover.getDirectClient();
+          console.log(`  📍 Cliente obtenido (failover state: ${supabaseFailover.getStatus().usandoSecundaria ? 'SECUNDARIA' : 'PRIMARIA'})`);
 
-      
-      const { data: deudas } = await supabase
-        .from("deudas_estudiantes")
-        .select("id")
-        .eq("estudiante_id", id);
+          const query = cliente.from(tabla).select("id");
 
-      if (deudas && deudas.length > 0) {
-        console.log(`Eliminando ${deudas.length} registros de deuda...`);
-        for (const deuda of deudas) {
-          await supabaseFailover.delete("deudas_estudiantes", deuda.id);
-        }
-      }
-
-      
-      const { data: pagos } = await supabase
-        .from("pagos")
-        .select("id")
-        .eq("estudiante_id", id);
-
-      if (pagos && pagos.length > 0) {
-        console.log(`Eliminando ${pagos.length} pagos...`);
-        for (const pago of pagos) {
-          await supabaseFailover.delete("pagos", pago.id);
-        }
-        deletedCounts.pagos = pagos.length;
-      }
-
-      
-      const { data: planes } = await supabase
-        .from("planes_pago")
-        .select("id")
-        .eq("estudiante_id", id);
-
-      if (planes && planes.length > 0) {
-        console.log(`Eliminando ${planes.length} planes de pago...`);
-        for (const plan of planes) {
-          
-          const { data: cuotas } = await supabase
-            .from("cuotas_pago")
-            .select("id")
-            .eq("plan_pago_id", plan.id);
-
-          if (cuotas && cuotas.length > 0) {
-            for (const cuota of cuotas) {
-              await supabaseFailover.delete("cuotas_pago", cuota.id);
-            }
-            deletedCounts.cuotas += cuotas.length;
+          // Aplicar filtros
+          let queryWithFilters = query;
+          for (const [key, value] of Object.entries(filtros)) {
+            queryWithFilters = queryWithFilters.eq(key, value);
           }
 
-          
-          await supabaseFailover.delete("planes_pago", plan.id);
+          console.log(`  ⏳ Ejecutando query...`);
+          const { data, error } = await queryWithFilters;
+
+          if (error) {
+            console.error(`   Query retornó error:`, error);
+            // Si is error de consulta normal (no de red), retornar
+            if (!error.message?.includes('Failed to fetch') && error.name !== 'TypeError') {
+              console.warn(`   Error de SQL/permisos (no de red), retornando []`);
+              return [];
+            }
+            console.warn(`  Error de RED detectado, lanzando excepción...`);
+            throw error; // Si es error de red, lanzar para activar failover
+          }
+
+          console.log(`   Query exitosa, ${data?.length || 0} registros encontrados`);
+          return data || [];
+        } catch (err: any) {
+          console.error(`  💥 Excepción capturada:`, err);
+
+          // Error de red, activar failover
+          if (err?.message?.includes('Failed to fetch') || err?.name === 'TypeError') {
+            console.warn(`  [QUERY] Error de red en ${tabla}, activando failover`);
+            supabaseFailover.forceFailover(`Error de red en query ${tabla}`);
+
+            // Reintentar con secundaria
+            console.log(`  🔄 Reintentando con SECUNDARIA...`);
+            const clienteSecundario = supabaseFailover.getDirectClient();
+            const query = clienteSecundario.from(tabla).select("id");
+
+            let queryWithFilters = query;
+            for (const [key, value] of Object.entries(filtros)) {
+              queryWithFilters = queryWithFilters.eq(key, value);
+            }
+
+            const { data, error: retryError } = await queryWithFilters;
+
+            if (retryError) {
+              console.error(`   Reintento SECUNDARIA también falló:`, retryError);
+              return [];
+            }
+
+            console.log(`   Reintento exitoso, ${data?.length || 0} registros encontrados`);
+            return data || [];
+          }
+
+          console.error(`   Error inesperado (no de red) en query ${tabla}:`, err);
+          return [];
         }
-        deletedCounts.planes = planes.length;
-      }
+      };
 
-      
-      const { data: matriculas } = await supabase
-        .from("matriculas")
-        .select("id")
-        .eq("estudiante_id", id);
-
-      if (matriculas && matriculas.length > 0) {
-        console.log(`Eliminando ${matriculas.length} matrículas...`);
-        for (const matricula of matriculas) {
-          await supabaseFailover.delete("matriculas", matricula.id);
-        }
-        deletedCounts.matriculas = matriculas.length;
-      }
-
-      
-      const { data: salones } = await supabase
-        .from("estudiantes_salones")
-        .select("id")
-        .eq("estudiante_id", id);
-
-      if (salones && salones.length > 0) {
-        console.log(`Eliminando ${salones.length} asignaciones a salones...`);
-        for (const salon of salones) {
-          await supabaseFailover.delete("estudiantes_salones", salon.id);
-        }
-        deletedCounts.salones = salones.length;
-      }
-
-      
-      console.log(`Eliminando perfil y usuario vinculado vía API...`);
       try {
-        const response = await fetch('/api/estudiantes/eliminar-perfil', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ estudiante_id: id })
-        });
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.warn(" Advertencia al eliminar perfil:", errorData.error);
-        } else {
-          deletedCounts.profiles = 1;
+        // 1. Eliminar ventas de inventario
+        const ventas = await queryConFailover("ventas_inventario", { estudiante_id: id });
+        if (ventas.length > 0) {
+          console.log(`✂️ Eliminando ${ventas.length} ventas de inventario...`);
+          for (const venta of ventas) {
+            await supabaseFailover.delete("ventas_inventario", venta.id);
+          }
         }
-      } catch (error) {
-        console.error("Error llamando API eliminar-perfil:", error);
+
+        // 2. Eliminar deudas
+        const deudas = await queryConFailover("deudas_estudiantes", { estudiante_id: id });
+        if (deudas.length > 0) {
+          console.log(`✂️ Eliminando ${deudas.length} registros de deuda...`);
+          for (const deuda of deudas) {
+            await supabaseFailover.delete("deudas_estudiantes", deuda.id);
+          }
+        }
+
+        // 3. Eliminar pagos (antes de planes)
+        const pagos = await queryConFailover("pagos", { estudiante_id: id });
+        if (pagos.length > 0) {
+          console.log(`✂️ Eliminando ${pagos.length} pagos...`);
+          for (const pago of pagos) {
+            await supabaseFailover.delete("pagos", pago.id);
+          }
+          deletedCounts.pagos = pagos.length;
+        }
+
+        // 4. Eliminar planes de pago (CON sus cuotas primero)
+        const planes = await queryConFailover("planes_pago", { estudiante_id: id });
+        console.log(`📋 [PLANES] Encontrados ${planes.length} planes de pago para eliminar`);
+
+        if (planes.length > 0) {
+          console.log(`✂️ Eliminando ${planes.length} planes de pago...`);
+          for (const plan of planes) {
+            // Primero eliminar cuotas del plan
+            const cuotas = await queryConFailover("cuotas_pago", { plan_pago_id: plan.id });
+
+            if (cuotas.length > 0) {
+              console.log(`  ✂️ Eliminando ${cuotas.length} cuotas del plan ${plan.id}...`);
+              for (const cuota of cuotas) {
+                await supabaseFailover.delete("cuotas_pago", cuota.id);
+              }
+              deletedCounts.cuotas += cuotas.length;
+            }
+
+            // Luego eliminar el plan
+            console.log(`  ✂️ Eliminando plan ${plan.id}...`);
+            await supabaseFailover.delete("planes_pago", plan.id);
+          }
+          deletedCounts.planes = planes.length;
+        }
+
+        // 5. Eliminar matrículas
+        const matriculas = await queryConFailover("matriculas", { estudiante_id: id });
+        if (matriculas.length > 0) {
+          console.log(`✂️ Eliminando ${matriculas.length} matrículas...`);
+          for (const matricula of matriculas) {
+            await supabaseFailover.delete("matriculas", matricula.id);
+          }
+          deletedCounts.matriculas = matriculas.length;
+        }
+
+        // 6. Eliminar asignaciones a salones
+        const salones = await queryConFailover("estudiantes_salones", { estudiante_id: id });
+        if (salones.length > 0) {
+          console.log(`✂️ Eliminando ${salones.length} asignaciones a salones...`);
+          for (const salon of salones) {
+            await supabaseFailover.delete("estudiantes_salones", salon.id);
+          }
+          deletedCounts.salones = salones.length;
+        }
+
+        // 7. Eliminar perfil y usuario
+        console.log(`✂️ Eliminando perfil y usuario vinculado vía API...`);
+        try {
+          const response = await fetch('/api/estudiantes/eliminar-perfil', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ estudiante_id: id })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            console.warn(" Advertencia al eliminar perfil:", errorData.error);
+          } else {
+            deletedCounts.profiles = 1;
+          }
+        } catch (error) {
+          console.warn(" Error llamando API eliminar-perfil:", error);
+        }
+
+        // 8. Finalmente eliminar el estudiante
+        console.log(`✂️ [FINAL] Eliminando estudiante ${id}...`);
+        const { error } = await supabaseFailover.delete("estudiantes", id);
+        if (error) {
+          console.error(` Error al eliminar estudiante:`, error);
+          throw error;
+        }
+
+        console.log(` [DELETE CASCADA] Estudiante eliminado exitosamente`);
+        return { id, estudianteData, deletedCounts };
+      } catch (error: any) {
+        console.error(` [DELETE CASCADA] Error al eliminar estudiante:`, error);
+        throw error;
       }
-
-      
-      const { error } = await supabaseFailover.delete("estudiantes", id);
-      if (error) throw error;
-
-      return { id, estudianteData, deletedCounts };
     },
     onSuccess: async (result) => {
       queryClient.invalidateQueries({ queryKey: ["estudiantes"] });
@@ -611,7 +695,7 @@ const Estudiantes = () => {
 
       toast.success(`Estudiante eliminado (${totalDeleted} registros relacionados eliminados)`);
 
-      
+
       if (result) {
         await logDelete(
           'estudiantes',
@@ -626,7 +710,7 @@ const Estudiantes = () => {
     },
   });
 
-  
+
   const resetForm = () => {
     setFormData({
       sede_id: "",
@@ -653,7 +737,7 @@ const Estudiantes = () => {
     setFechaNacimientoApoderado(undefined);
   };
 
-  
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const dataToSubmit = {
@@ -666,7 +750,7 @@ const Estudiantes = () => {
     createMutation.mutate(dataToSubmit as Estudiante);
   };
 
-  
+
   const handleEdit = (estudiante: Estudiante) => {
     setSelectedEstudiante(estudiante);
     setFormData({
@@ -699,7 +783,7 @@ const Estudiantes = () => {
     setEditOpen(true);
   };
 
-  
+
   const handleUpdate = (e: React.FormEvent) => {
     e.preventDefault();
 

@@ -4,22 +4,22 @@
  * Maneja todas las operaciones de logging en MongoDB desde el backend
  */
 
-import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.75.0';
-import { MongoClient } from 'https://deno.land/x/mongo@v0.32.0/mod.ts';
+import { serve } from 'https:
+import { createClient } from 'https:
+import { MongoClient } from 'https:
 
-// Headers CORS
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Cliente Supabase
+
 const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Cliente MongoDB
+
 let mongoClient: MongoClient | null = null;
 let mongoDb: any = null;
 
@@ -47,7 +47,7 @@ async function getCollection(collectionName: string) {
 }
 
 const handler = async (req: Request): Promise<Response> => {
-  // Manejar preflight CORS
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -58,7 +58,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     console.log('Activity Logger - Action:', action);
 
-    // POST /activity-logger - Registrar nueva actividad
+    
     if (req.method === 'POST' && action === 'log') {
       const collection = await getCollection('activity_logs');
 
@@ -82,7 +82,7 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // POST /activity-logger?action=get_user_logs - Obtener logs de usuario
+    
     if (req.method === 'POST' && action === 'get_user_logs') {
       const { user_id, limit = 50 } = data;
       const collection = await getCollection('activity_logs');
@@ -105,7 +105,7 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // POST /activity-logger?action=get_recent_logs - Logs recientes
+    
     if (req.method === 'POST' && action === 'get_recent_logs') {
       const { limit = 100 } = data;
       const collection = await getCollection('activity_logs');
@@ -128,7 +128,7 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // POST /activity-logger?action=get_module_logs - Logs por módulo
+    
     if (req.method === 'POST' && action === 'get_module_logs') {
       const { module, limit = 100 } = data;
       const collection = await getCollection('activity_logs');
@@ -151,7 +151,7 @@ const handler = async (req: Request): Promise<Response> => {
       );
     }
 
-    // POST /activity-logger?action=get_stats - Estadísticas
+    
     if (req.method === 'POST' && action === 'get_stats') {
       const { user_id } = data;
       const collection = await getCollection('activity_logs');
