@@ -37,7 +37,7 @@ const GestionUsuarios = () => {
   const queryClient = useQueryClient();
 
 
-  
+
   const { data: profesores = [], isLoading: loadingProfesores } = useQuery<Profesor[]>({
     queryKey: ["profesores-activos"],
     queryFn: async () => {
@@ -62,29 +62,32 @@ const GestionUsuarios = () => {
     enabled: typeof window !== 'undefined',
   });
 
-  
+
   const { data: users = [], isLoading: loadingUsers, refetch: refetchUsers } = useQuery<UserData[]>({
     queryKey: ["usuarios-sistema"],
     queryFn: async () => {
-      
+
       const { data: userRolesData, error: rolesError } = await supabase
         .from('user_roles')
         .select('user_id, role, created_at');
 
       if (rolesError) throw rolesError;
 
-      
-      const { data } = await supabase.auth.admin.listUsers();
-      const authUsers = data.users;
+      // Obtener usuarios de auth usando el endpoint API (con service role)
+      const response = await fetch('/api/admin/users/list');
+      if (!response.ok) {
+        throw new Error('Error fetching auth users');
+      }
+      const { users: authUsers } = await response.json();
 
-      
+
       const { data: profilesData } = await supabase
         .from('profiles')
         .select('user_id, profesor_id, estudiante_id');
 
       const usersWithDetails = await Promise.all(
         ((userRolesData as any[]) || []).map(async ur => {
-          const authUser = authUsers?.find((u) => u.id === ur.user_id);
+          const authUser = authUsers?.find((u: any) => u.id === ur.user_id);
           const profile = profilesData?.find((p: Profile) => p.user_id === ur.user_id);
 
           let profesor_nombre, estudiante_nombre;
@@ -121,8 +124,8 @@ const GestionUsuarios = () => {
       return usersWithDetails;
     },
     enabled: typeof window !== 'undefined',
-    staleTime: 0, 
-    refetchOnMount: true, 
+    staleTime: 0,
+    refetchOnMount: true,
   });
 
   const loadingData = loadingProfesores || loadingEstudiantes;
@@ -130,7 +133,7 @@ const GestionUsuarios = () => {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    
+
     if (role === 'teacher' && !profesorId) {
       toast({
         title: "Error",
@@ -152,7 +155,7 @@ const GestionUsuarios = () => {
     setLoading(true);
 
     try {
-      
+
       const response = await fetch('/api/auth/crear-usuario-dual', {
         method: 'POST',
         headers: {
@@ -187,7 +190,7 @@ const GestionUsuarios = () => {
         setEstudianteId("");
         setIsDialogOpen(false);
 
-        
+
         queryClient.invalidateQueries({ queryKey: ["usuarios-sistema"] });
         queryClient.invalidateQueries({ queryKey: ["estudiantes"] });
         queryClient.invalidateQueries({ queryKey: ["estudiantes-activos-usuarios"] });

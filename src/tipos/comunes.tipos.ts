@@ -34,7 +34,7 @@ export type Estudiante = {
 
 export type UserRole = "admin" | "teacher" | "student";
 
-// Profesor según tu select: id, nombres, apellidos, dni
+
 export interface Profesor {
   id: string;
   nombres: string;
@@ -42,14 +42,14 @@ export interface Profesor {
   dni: string;
 }
 
-// Perfil en tabla profiles
+
 export interface Profile {
   user_id: string;
   profesor_id: string | null;
   estudiante_id: string | null;
 }
 
-// Resultado de "user_roles"
+
 export interface UserRoleRow {
   user_id: string;
   role: UserRole;
@@ -62,7 +62,7 @@ export interface UserData {
   role: "admin" | "teacher" | "student";
   profesor_nombre?: string;
   estudiante_nombre?: string;
-  created_at: string | null; // ← permitir null
+  created_at: string | null; 
 }
 
 
@@ -86,7 +86,7 @@ export interface EstudianteForm {
   apoderado_telefono: string;
   apoderado_direccion: string;
   apoderado_sexo: string;
-  apoderado_edad: string; // igual que edad
+  apoderado_edad: string; 
   apoderado_fecha_nacimiento: string | null;
 }
 

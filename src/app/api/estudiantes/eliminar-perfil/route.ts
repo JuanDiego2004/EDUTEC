@@ -23,9 +23,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'estudiante_id requerido' }, { status: 400 });
         }
 
-        console.log(`🗑️ Eliminando perfil/usuario para estudiante: ${estudiante_id}`);
+        console.log(` Eliminando perfil/usuario para estudiante: ${estudiante_id}`);
 
-        
+
         const [primProfile, secProfile] = await Promise.all([
             supabasePrimarioAdmin.from('profiles').select('user_id').eq('estudiante_id', estudiante_id).maybeSingle(),
             supabaseSecundarioAdmin.from('profiles').select('user_id').eq('estudiante_id', estudiante_id).maybeSingle()
@@ -33,16 +33,16 @@ export async function POST(req: NextRequest) {
 
         const userId = primProfile.data?.user_id || secProfile.data?.user_id;
 
-        
-        
-        
-        
+
+
+
+
         const deleteResults = await Promise.allSettled([
             supabasePrimarioAdmin.from('profiles').delete().eq('estudiante_id', estudiante_id),
             supabaseSecundarioAdmin.from('profiles').delete().eq('estudiante_id', estudiante_id)
         ]);
 
-        
+
         if (deleteResults[0].status === 'fulfilled') {
             console.log(' Primaria delete result:', deleteResults[0].value);
         } else {
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
 
         console.log(' Perfiles eliminados (o intentados) en ambas bases');
 
-        
+
         if (userId) {
             console.log(`👤 Eliminando usuario auth asociado: ${userId}`);
             await eliminarUsuarioDual(userId);

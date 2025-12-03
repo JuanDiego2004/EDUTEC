@@ -2,34 +2,6 @@ import { gestorDB } from "@/servicios/base-datos/gestorConexiones";
 import { NextResponse } from "next/server";
 
 
-/**
- * API Profesional de Logs - Sistema de Auditoría Centralizado
- * POST /api/module-logs
- * 
- * ARQUITECTURA:
- * - Colección única: "logs" (best practice para sistemas de auditoría)
- * - Índices compuestos optimizados para queries frecuentes
- * - Campos en español para consistencia con el sistema
- * - TTL index para limpieza automática de logs antiguos
- * 
- * ESTRUCTURA DEL DOCUMENTO:
- * {
- *   usuario: { id, correo, rol },
- *   accion: { tipo, modulo, descripcion, exitoso },
- *   entidad: { tipo, id, datosPrevios, datosNuevos },
- *   metadatos: { ip, userAgent, ... },
- *   fechaHora: ISODate,
- *   creadoEn: ISODate
- * }
- * 
- * ÍNDICES RECOMENDADOS (crear en MongoDB):
- * 1. { "usuario.rol": 1, "accion.modulo": 1, "fechaHora": -1 }
- * 2. { "usuario.id": 1, "fechaHora": -1 }
- * 3. { "accion.modulo": 1, "fechaHora": -1 }
- * 4. { "accion.exitoso": 1, "fechaHora": -1 }
- * 5. { "creadoEn": 1 } con TTL de 2 años
- */
-
 export async function POST(request: Request) {
     const DB_NAME = "reyna_de_la_paz";
     const COLLECTION_NAME = "logs";
@@ -90,17 +62,17 @@ export async function POST(request: Request) {
             creadoEn: new Date()
         };
 
-        // DUAL-WRITE: Insertar en AMBAS bases de MongoDB
-        console.log('📝 [Logs] Dual-write: Insertando en AMBAS bases de MongoDB...');
+        
+        console.log('[Logs] Dual-write: Insertando en AMBAS bases de MongoDB...');
 
         const [resultadoPrimaria, resultadoSecundaria] = await Promise.allSettled([
-            // Primaria
+            
             (async () => {
                 const { obtenerClienteMongoPrimario } = await import('@/servicios/base-datos/conexionMongo');
                 const dbPrimaria = await obtenerClienteMongoPrimario();
                 return await dbPrimaria.collection(COLLECTION_NAME).insertOne(documentoLog);
             })(),
-            // Secundaria
+            
             (async () => {
                 const { obtenerClienteMongoSecundario } = await import('@/servicios/base-datos/conexionMongo');
                 const dbSecundaria = await obtenerClienteMongoSecundario();
@@ -108,7 +80,7 @@ export async function POST(request: Request) {
             })()
         ]);
 
-        // Verificar resultados
+        
         const primOk = resultadoPrimaria.status === 'fulfilled';
         const secOk = resultadoSecundaria.status === 'fulfilled';
 
@@ -124,7 +96,7 @@ export async function POST(request: Request) {
             console.warn(' MongoDB SECUNDARIA falló:', resultadoSecundaria.status === 'rejected' ? resultadoSecundaria.reason : 'Unknown');
         }
 
-        // Si al menos una tuvo éxito, considerar exitoso
+        
         if (primOk || secOk) {
             return NextResponse.json({
                 ok: true,
@@ -141,7 +113,7 @@ export async function POST(request: Request) {
             });
         }
 
-        // Ambas fallaron
+        
         console.error(' AMBAS bases de MongoDB fallaron al insertar log');
         throw new Error('No se pudo guardar el log en ninguna base de datos');
 
@@ -158,17 +130,7 @@ export async function POST(request: Request) {
     }
 }
 
-/**
- * GET /api/module-logs - Consultar logs (opcional, para dashboard)
- * 
- * Query params:
- * - rol: filtrar por rol de usuario
- * - modulo: filtrar por módulo
- * - usuario: filtrar por ID de usuario
- * - desde: fecha inicio (ISO)
- * - hasta: fecha fin (ISO)
- * - limite: número de resultados (default: 50, max: 1000)
- */
+
 export async function GET(request: Request) {
     const DB_NAME = "reyna_de_la_paz";
     const COLLECTION_NAME = "logs";
@@ -210,7 +172,7 @@ export async function GET(request: Request) {
         let logs: any[] = [];
         let fuente = '';
 
-        // Intentar primero con PRIMARIA
+        
         try {
             const { obtenerClienteMongoPrimario } = await import('@/servicios/base-datos/conexionMongo');
             const dbPrimaria = await obtenerClienteMongoPrimario();
@@ -226,7 +188,7 @@ export async function GET(request: Request) {
         } catch (errorPrimaria) {
             console.warn(' [Logs GET] Primaria falló, intentando SECUNDARIA...', errorPrimaria);
 
-            // Fallback a SECUNDARIA
+            
             try {
                 const { obtenerClienteMongoSecundario } = await import('@/servicios/base-datos/conexionMongo');
                 const dbSecundaria = await obtenerClienteMongoSecundario();

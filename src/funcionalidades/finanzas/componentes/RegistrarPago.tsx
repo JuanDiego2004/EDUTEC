@@ -203,7 +203,7 @@ const RegistrarPago = () => {
       };
     },
     onSuccess: async (data: any) => {
-      console.log("🎉 Pago completado exitosamente:", data);
+      console.log("Pago completado exitosamente:", data);
 
 
       try {

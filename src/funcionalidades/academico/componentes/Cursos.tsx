@@ -33,7 +33,7 @@ const Cursos = () => {
     nivel: "",
   });
 
-  
+
   const [competenciasDialogOpen, setCompetenciasDialogOpen] = useState(false);
   const [selectedCursoForComp, setSelectedCursoForComp] = useState<any>(null);
   const [salonCursosForCurso, setSalonCursosForCurso] = useState<any[]>([]);
@@ -59,13 +59,13 @@ const Cursos = () => {
     enabled: typeof window !== 'undefined',
   });
 
-  
+
   useEffect(() => {
     if (open && cursos) {
       const generarCodigo = () => {
         if (cursos.length === 0) return "001";
 
-        
+
         const codigos = (cursos as any[])
           .map(c => parseInt(c.codigo))
           .filter(num => !isNaN(num))
@@ -85,7 +85,7 @@ const Cursos = () => {
     queryFn: async () => {
       const supabase = supabaseFailover.getDirectClient();
 
-      
+
       const { data: salonCursos, error: scError } = await supabase
         .from("salon_cursos")
         .select(`
@@ -97,7 +97,7 @@ const Cursos = () => {
 
       if (scError) throw scError;
 
-      
+
       const estudiantesPorCursoMap: Record<string, any[]> = {};
 
       for (const sc of salonCursos || []) {
@@ -116,7 +116,7 @@ const Cursos = () => {
           estudiantesPorCursoMap[sc.curso_id] = [];
         }
 
-        
+
         for (const es of estudiantesSalon || []) {
           const yaExiste = estudiantesPorCursoMap[sc.curso_id].some(
             (e: any) => (e.estudiantes as any)?.id === (es.estudiantes as any)?.id
@@ -171,7 +171,7 @@ const Cursos = () => {
 
       if (error) throw error;
 
-      
+
       const competenciasByCurso: Record<string, any[]> = {};
       data?.forEach((sc: any) => {
         if (sc.competencias && sc.curso_id) {
@@ -198,7 +198,7 @@ const Cursos = () => {
       return data;
     },
     onSuccess: async (data) => {
-      
+
       if (data && data.length > 0) {
         await logCreate('cursos', 'Curso', (data as any)[0].id, (data as any)[0]);
       }
@@ -222,30 +222,47 @@ const Cursos = () => {
         matriculas: 0
       };
 
-      
+
       const { data: salonCursos } = await supabase
         .from("salon_cursos")
         .select("id")
         .eq("curso_id", id);
 
-      
+      // Buscar y eliminar matrículas con sus dependencias
       const { data: matriculas } = await supabase
         .from("matriculas")
         .select("id")
         .eq("curso_id", id);
 
       if (matriculas && matriculas.length > 0) {
-        console.log(`Eliminando ${matriculas.length} matrículas del curso...`);
+        console.log(` Eliminando ${matriculas.length} matrículas del curso y sus dependencias...`);
         for (const matricula of matriculas) {
+          // 1. Eliminar estado académico
+          await supabaseFailover.delete("estado_academico", matricula.id);
+
+          // 2. Eliminar evaluaciones relacionadas
+          const { data: evaluaciones } = await supabase
+            .from("evaluaciones")
+            .select("id")
+            .eq("matricula_id", matricula.id);
+
+          if (evaluaciones && evaluaciones.length > 0) {
+            for (const evaluacion of evaluaciones) {
+              await supabaseFailover.delete("evaluaciones", evaluacion.id);
+            }
+          }
+
+          // 3. Eliminar la matrícula
           await supabaseFailover.delete("matriculas", matricula.id);
         }
         deletedCounts.matriculas = matriculas.length;
+        console.log(`${matriculas.length} matrículas eliminadas`);
       }
 
       if (salonCursos && salonCursos.length > 0) {
         console.log(`Eliminando ${salonCursos.length} asignaciones salon-curso...`);
 
-        
+
         for (const sc of salonCursos) {
           const { data: competencias } = await supabase
             .from("competencias")
@@ -259,20 +276,20 @@ const Cursos = () => {
             deletedCounts.competencias += competencias.length;
           }
 
-          
+
           await supabaseFailover.delete("salon_cursos", sc.id);
         }
         deletedCounts.salonCursos = salonCursos.length;
       }
 
-      
+
       const { error } = await supabaseFailover.delete("cursos", id);
       if (error) throw error;
 
       return { id, deletedCounts };
     },
     onSuccess: async (result) => {
-      
+
       await logDelete('cursos', 'Curso', result.id, {});
 
       queryClient.invalidateQueries({ queryKey: ["cursos"] });
@@ -296,11 +313,11 @@ const Cursos = () => {
     createCurso.mutate(formData);
   };
 
-  
+
   const handleOpenGestionCompetencias = async (curso: any) => {
     setSelectedCursoForComp(curso);
-    setCompetenciasDialogOpen(true); 
-    await loadSalonCursosForCurso(curso.id); 
+    setCompetenciasDialogOpen(true);
+    await loadSalonCursosForCurso(curso.id);
   };
 
   const loadSalonCursosForCurso = async (cursoId: string) => {
@@ -353,7 +370,7 @@ const Cursos = () => {
         return;
       }
 
-      
+
       const sumaActual = competencias
         .filter(c => c.id !== editingCompetencia?.id)
         .reduce((sum, c) => sum + parseFloat(c.porcentaje), 0);
@@ -538,7 +555,7 @@ const Cursos = () => {
               const stats = estadisticas?.[curso.id];
               const competencias = competenciasPorCurso?.[curso.id] || [];
 
-              
+
               const competenciasUnicas = Array.from(
                 new Map(competencias.map((c: any) => [c.id, c])).values()
               );

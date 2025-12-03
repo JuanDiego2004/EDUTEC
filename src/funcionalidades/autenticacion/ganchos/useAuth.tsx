@@ -187,7 +187,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   
   
   const signUp = async (email: string, password: string, role: UserRole): Promise<{ error: AuthError | null }> => {
-    console.log("📝 [Auth] Intentando registro con:", email, "Role:", role);
+    console.log("[Auth] Intentando registro con:", email, "Role:", role);
 
     
     const supabaseRole = mapRoleToSupabase(role);

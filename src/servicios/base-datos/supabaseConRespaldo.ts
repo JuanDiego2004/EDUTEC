@@ -39,7 +39,7 @@ export const supabaseFailover = {
             limite?: number;
         }
     ): Promise<QueryResult<T>> {
-        
+
         if (!usandoSecundaria) {
             try {
                 console.log(`📊 [SELECT] Intentando con PRIMARIA: ${tabla}`);
@@ -66,12 +66,12 @@ export const supabaseFailover = {
                     console.log(` [SELECT] PRIMARIA exitosa: ${tabla}`);
                     erroresConsecutivos = 0;
 
-                    
+
                     if (usandoSecundaria) {
-                        console.log('🎉 PRIMARIA RECUPERADA - Reiniciando modo normal');
+                        console.log('PRIMARIA RECUPERADA - Reiniciando modo normal');
                         usandoSecundaria = false;
 
-                        
+
                         if (onPrimariaRecuperada && timestampUltimoFailover) {
                             onPrimariaRecuperada(timestampUltimoFailover);
                         }
@@ -85,12 +85,12 @@ export const supabaseFailover = {
                     };
                 }
 
-                
+
                 console.warn(` [SELECT] PRIMARIA retornó error: ${tabla}`, resultado.error);
                 erroresConsecutivos++;
 
                 if (erroresConsecutivos >= 2) {
-                    console.warn(`🔄 [FAILOVER] Cambiando a SECUNDARIA después de ${erroresConsecutivos} errores`);
+                    console.warn(`[FAILOVER] Cambiando a SECUNDARIA después de ${erroresConsecutivos} errores`);
 
                     if (!usandoSecundaria && !timestampUltimoFailover) {
                         timestampUltimoFailover = new Date();
@@ -100,11 +100,11 @@ export const supabaseFailover = {
                     usandoSecundaria = true;
                 }
             } catch (error: any) {
-                
+
                 console.error(` [SELECT] PRIMARIA falló completamente (network error): ${tabla}`, error);
                 console.error(`Error type: ${error?.name}, Message: ${error?.message}`);
 
-                
+
                 if (!usandoSecundaria) {
                     console.warn('[FAILOVER INMEDIATO] Error de conexión detectado, cambiando a SECUNDARIA');
 
@@ -114,14 +114,14 @@ export const supabaseFailover = {
                     }
 
                     usandoSecundaria = true;
-                    erroresConsecutivos = 999; 
+                    erroresConsecutivos = 999;
                 }
 
-                
+
             }
         }
 
-        
+
         try {
             console.log(`📊 [SELECT] Usando SECUNDARIA: ${tabla}`);
             const clienteSecundario = obtenerClienteSupabaseSecundario();
@@ -159,7 +159,7 @@ export const supabaseFailover = {
         }
     },
 
- 
+
     async insert<T = any>(
         tabla: string,
         datos: any | any[]
@@ -167,36 +167,36 @@ export const supabaseFailover = {
         try {
             console.log(`INSERT dual en tabla: ${tabla}`);
 
-            
+
             const datosConId = Array.isArray(datos) ? datos : [datos];
             const datosPreparados = datosConId.map((item: any) => {
-                
+
                 if (!item.id) {
                     return {
                         ...item,
-                        id: crypto.randomUUID() 
+                        id: crypto.randomUUID()
                     };
                 }
                 return item;
             });
 
-            
+
             const [resultadoPrimaria, resultadoSecundaria] = await Promise.allSettled([
                 obtenerClienteSupabasePrimario().from(tabla).insert(datosPreparados).select(),
                 obtenerClienteSupabaseSecundario().from(tabla).insert(datosPreparados).select()
             ]);
 
-            
+
             if (resultadoPrimaria.status === 'fulfilled' && !resultadoPrimaria.value.error) {
                 console.log(` INSERT exitoso en PRIMARIA: ${tabla}`);
                 erroresConsecutivos = 0;
 
-                
+
                 if (resultadoSecundaria.status === 'fulfilled' && !resultadoSecundaria.value.error) {
                     console.log(` INSERT exitoso en SECUNDARIA: ${tabla}`);
                 } else {
                     console.warn(` INSERT falló en SECUNDARIA: ${tabla}`, resultadoSecundaria);
-                    
+
                 }
 
                 return {
@@ -205,7 +205,7 @@ export const supabaseFailover = {
                 };
             }
 
-            
+
             const errorPrim = resultadoPrimaria.status === 'rejected'
                 ? resultadoPrimaria.reason
                 : resultadoPrimaria.value.error;
@@ -219,7 +219,7 @@ export const supabaseFailover = {
                 };
             }
 
-            
+
             console.error(` INSERT falló en AMBAS bases: ${tabla}`);
             return {
                 data: null,
@@ -250,18 +250,18 @@ export const supabaseFailover = {
         try {
             console.log(`UPDATE dual en tabla: ${tabla}, id: ${id}`);
 
-            
+
             const [resultadoPrimaria, resultadoSecundaria] = await Promise.allSettled([
                 obtenerClienteSupabasePrimario().from(tabla).update(datos).eq('id', id).select(),
                 obtenerClienteSupabaseSecundario().from(tabla).update(datos).eq('id', id).select()
             ]);
 
-            
+
             if (resultadoPrimaria.status === 'fulfilled' && !resultadoPrimaria.value.error) {
                 console.log(` UPDATE exitoso en PRIMARIA: ${tabla}`);
                 erroresConsecutivos = 0;
 
-                
+
                 if (resultadoSecundaria.status === 'fulfilled' && !resultadoSecundaria.value.error) {
                     console.log(` UPDATE exitoso en SECUNDARIA: ${tabla}`);
                 } else {
@@ -277,7 +277,7 @@ export const supabaseFailover = {
                 };
             }
 
-            
+
             console.warn(` UPDATE falló en PRIMARIA: ${tabla}`);
             if (resultadoSecundaria.status === 'fulfilled' && !resultadoSecundaria.value.error) {
                 console.log(` UPDATE exitoso en SECUNDARIA (primaria falló): ${tabla}`);
@@ -288,7 +288,7 @@ export const supabaseFailover = {
                 };
             }
 
-            
+
             console.error(` UPDATE falló en AMBAS bases: ${tabla}`);
             return {
                 data: null,
@@ -305,9 +305,9 @@ export const supabaseFailover = {
         tabla: string,
         id: string
     ): Promise<{ error: any }> {
-        console.log(`🗑️ [DELETE] Iniciando delete en tabla: ${tabla}, id: ${id}`);
+        console.log(` [DELETE] Iniciando delete en tabla: ${tabla}, id: ${id}`);
 
-        
+
         if (usandoSecundaria) {
             console.log(`📍 [DELETE] Usando SOLO SECUNDARIA (modo failover activo)`);
             try {
@@ -329,7 +329,7 @@ export const supabaseFailover = {
             }
         }
 
-        
+
         try {
             console.log(`📍 [DELETE] Intentando con PRIMARIA...`);
 
@@ -341,7 +341,7 @@ export const supabaseFailover = {
             if (!errorPrimaria) {
                 console.log(` [DELETE] PRIMARIA exitosa: ${tabla}`);
 
-                
+
                 try {
                     await obtenerClienteSupabaseSecundario()
                         .from(tabla)
@@ -355,10 +355,10 @@ export const supabaseFailover = {
                 return { error: null };
             }
 
-            
+
             console.warn(` [DELETE] PRIMARIA retornó error: ${tabla}`, errorPrimaria);
 
-            
+
             const { error: errorSecundaria } = await obtenerClienteSupabaseSecundario()
                 .from(tabla)
                 .delete()
@@ -369,15 +369,15 @@ export const supabaseFailover = {
                 return { error: null };
             }
 
-            
+
             console.error(` [DELETE] Ambas bases fallaron: ${tabla}`);
             return { error: errorPrimaria };
 
         } catch (error: any) {
-            
+
             console.warn(` [DELETE] Primaria lanzó excepción (network error): ${tabla}`, error);
 
-            
+
             if (error?.message?.includes('Failed to fetch') ||
                 error?.message?.includes('NetworkError') ||
                 error?.name === 'TypeError') {
@@ -391,7 +391,7 @@ export const supabaseFailover = {
                 }
             }
 
-            
+
             try {
                 const { error: errorSecundaria } = await obtenerClienteSupabaseSecundario()
                     .from(tabla)

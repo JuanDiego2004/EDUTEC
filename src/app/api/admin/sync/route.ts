@@ -3,10 +3,10 @@ import { sincronizador } from '@/servicios/sincronizacion/sincronizador';
 
 export async function POST(request: Request) {
     try {
-        console.log('🔄 [API Sync] Iniciando sincronización manual...');
+        console.log('[API Sync] Iniciando sincronización manual...');
 
-        // Verificar permisos (idealmente solo admin)
-        // Por simplicidad en este paso, asumimos que el middleware o el componente UI maneja la auth básica
+        
+        
 
         const resultados = await sincronizador.sincronizarTodo();
 

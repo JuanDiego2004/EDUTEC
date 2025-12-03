@@ -174,7 +174,7 @@ export async function crearUsuarioDual(params: CrearUsuarioDualParams): Promise<
             })
         ]);
 
-        console.log(`🎉 Usuario dual creado exitosamente`);
+        console.log(`Usuario dual creado exitosamente`);
 
         return {
             success: true,
@@ -242,6 +242,8 @@ export async function actualizarUsuarioDual(
  */
 export async function eliminarUsuarioDual(userId: string): Promise<ResultadoCreacionDual> {
     try {
+        console.log(` Iniciando eliminación dual de usuario: ${userId}`);
+
         // 1. Buscar el ID secundario desde el mapeo
         const { data: mapping } = await supabasePrimarioAdmin
             .from('user_id_mapping')
@@ -249,30 +251,52 @@ export async function eliminarUsuarioDual(userId: string): Promise<ResultadoCrea
             .eq('primary_user_id', userId)
             .maybeSingle();
 
-        const secondaryUserId = mapping?.secondary_user_id;
+        let secondaryUserId = mapping?.secondary_user_id;
 
         if (!secondaryUserId) {
-            console.warn(` No se encontró mapeo para user_id: ${userId}, eliminando solo de primaria`);
+            console.warn(`No se encontró mapeo para user_id: ${userId}`);
+            console.log(`Intentando eliminar con el mismo ID en ambas bases...`);
+            // Si no hay mapeo, usar el mismo ID (puede ser que se crearon sin mapeo)
+            secondaryUserId = userId;
+        } else {
+            console.log(`Mapeo encontrado: ${userId} -> ${secondaryUserId}`);
         }
 
-        // 2. Eliminar de ambas bases
-        const [resPrimaria, resSecundaria] = await Promise.allSettled([
-            supabasePrimarioAdmin.auth.admin.deleteUser(userId),
-            secondaryUserId
-                ? supabaseSecundarioAdmin.auth.admin.deleteUser(secondaryUserId)
-                : Promise.resolve({ error: null })
+        // 2. Eliminar user_roles de ambas bases primero
+        console.log(` Eliminando user_roles...`);
+        await Promise.allSettled([
+            supabasePrimarioAdmin.from('user_roles').delete().eq('user_id', userId),
+            supabaseSecundarioAdmin.from('user_roles').delete().eq('user_id', secondaryUserId)
         ]);
 
-        // 3. Eliminar mapeo de ID
-        if (secondaryUserId) {
-            await Promise.all([
+        // 3. Eliminar profiles de ambas bases
+        console.log(` Eliminando profiles...`);
+        await Promise.allSettled([
+            supabasePrimarioAdmin.from('profiles').delete().eq('user_id', userId),
+            supabaseSecundarioAdmin.from('profiles').delete().eq('user_id', secondaryUserId)
+        ]);
+
+        // 4. Eliminar de auth en ambas bases
+        console.log(` Eliminando de auth.users...`);
+        const [resPrimaria, resSecundaria] = await Promise.allSettled([
+            supabasePrimarioAdmin.auth.admin.deleteUser(userId),
+            supabaseSecundarioAdmin.auth.admin.deleteUser(secondaryUserId)
+        ]);
+
+        // 5. Eliminar mapeo de ID (si existía)
+        if (mapping) {
+            console.log(` Eliminando mapeo...`);
+            await Promise.allSettled([
                 supabasePrimarioAdmin.from('user_id_mapping').delete().eq('primary_user_id', userId),
                 supabaseSecundarioAdmin.from('user_id_mapping').delete().eq('primary_user_id', userId)
             ]);
         }
 
-        const primSuccess = resPrimaria.status === 'fulfilled';
-        const secSuccess = resSecundaria.status === 'fulfilled';
+        const primSuccess = resPrimaria.status === 'fulfilled' && !resPrimaria.value.error;
+        const secSuccess = resSecundaria.status === 'fulfilled' && !resSecundaria.value.error;
+
+        console.log(`Primaria: ${primSuccess ? 'OK' : 'FALLÓ'}`);
+        console.log(`Secundaria: ${secSuccess ? 'OK' : 'FALLÓ'}`);
 
         return {
             success: primSuccess && secSuccess,
@@ -280,15 +304,18 @@ export async function eliminarUsuarioDual(userId: string): Promise<ResultadoCrea
             detalles: {
                 primaria: {
                     success: primSuccess,
-                    error: resPrimaria.status === 'rejected' ? resPrimaria.reason : undefined
+                    error: resPrimaria.status === 'rejected' ? (resPrimaria.reason as Error).message :
+                        (resPrimaria.value.error ? resPrimaria.value.error.message : undefined)
                 },
                 secundaria: {
                     success: secSuccess,
-                    error: resSecundaria.status === 'rejected' ? resSecundaria.reason : undefined
+                    error: resSecundaria.status === 'rejected' ? (resSecundaria.reason as Error).message :
+                        (resSecundaria.value.error ? resSecundaria.value.error.message : undefined)
                 }
             }
         };
     } catch (error) {
+        console.error('💥 Error inesperado en eliminación dual:', error);
         return {
             success: false,
             error: (error as Error).message

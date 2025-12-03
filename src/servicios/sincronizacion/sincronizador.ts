@@ -47,7 +47,7 @@ export const sincronizador = {
 
 
     async sincronizarTablaSupabase(tabla: string) {
-        console.log(`🔄 Sincronizando tabla ${tabla}...`);
+        console.log(`Sincronizando tabla ${tabla}...`);
 
         const primaria = obtenerClienteSupabasePrimario();
         const secundaria = await obtenerClienteSupabaseSecundario(); 
@@ -108,7 +108,7 @@ export const sincronizador = {
     },
 
     async sincronizarLogsMongo() {
-        console.log('🔄 Sincronizando MongoDB Logs...');
+        console.log('Sincronizando MongoDB Logs...');
 
         
         const { obtenerClienteMongoPrimario, obtenerClienteMongoSecundario } = await import("@/servicios/base-datos/conexionMongo");

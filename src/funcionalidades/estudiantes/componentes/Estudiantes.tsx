@@ -502,7 +502,7 @@ const Estudiantes = () => {
 
   const deleteMutation = useMutation({
     mutationFn: async ({ id, estudianteData }: { id: string; estudianteData: any }) => {
-      console.log(`🗑️ [DELETE CASCADA] Iniciando eliminación de estudiante: ${id}`);
+      console.log(` [DELETE CASCADA] Iniciando eliminación de estudiante: ${id}`);
 
       let deletedCounts = {
         pagos: 0,
@@ -554,7 +554,7 @@ const Estudiantes = () => {
             supabaseFailover.forceFailover(`Error de red en query ${tabla}`);
 
             // Reintentar con secundaria
-            console.log(`  🔄 Reintentando con SECUNDARIA...`);
+            console.log(`  Reintentando con SECUNDARIA...`);
             const clienteSecundario = supabaseFailover.getDirectClient();
             const query = clienteSecundario.from(tabla).select("id");
 
@@ -615,22 +615,39 @@ const Estudiantes = () => {
         if (planes.length > 0) {
           console.log(`✂️ Eliminando ${planes.length} planes de pago...`);
           for (const plan of planes) {
-            // Primero eliminar cuotas del plan
-            const cuotas = await queryConFailover("cuotas_pago", { plan_pago_id: plan.id });
+            try {
+              // Primero eliminar cuotas del plan
+              const cuotas = await queryConFailover("cuotas_pago", { plan_pago_id: plan.id });
 
-            if (cuotas.length > 0) {
-              console.log(`  ✂️ Eliminando ${cuotas.length} cuotas del plan ${plan.id}...`);
-              for (const cuota of cuotas) {
-                await supabaseFailover.delete("cuotas_pago", cuota.id);
+              if (cuotas.length > 0) {
+                console.log(`  ✂️ Eliminando ${cuotas.length} cuotas del plan ${plan.id}...`);
+                for (const cuota of cuotas) {
+                  const { error: cuotaError } = await supabaseFailover.delete("cuotas_pago", cuota.id);
+                  if (cuotaError) {
+                    console.error(`    ❌ Error eliminando cuota ${cuota.id}:`, cuotaError);
+                    throw cuotaError;
+                  }
+                }
+                deletedCounts.cuotas += cuotas.length;
               }
-              deletedCounts.cuotas += cuotas.length;
-            }
 
-            // Luego eliminar el plan
-            console.log(`  ✂️ Eliminando plan ${plan.id}...`);
-            await supabaseFailover.delete("planes_pago", plan.id);
+              // Luego eliminar el plan
+              console.log(`  ✂️ Eliminando plan ${plan.id}...`);
+              const { error: planError } = await supabaseFailover.delete("planes_pago", plan.id);
+              if (planError) {
+                console.error(`    ❌ Error eliminando plan ${plan.id}:`, planError);
+                throw planError;
+              }
+              console.log(`    Plan ${plan.id} eliminado exitosamente`);
+            } catch (planErr: any) {
+              console.error(`  💥 Error crítico eliminando plan ${plan.id}:`, planErr);
+              throw new Error(`No se pudo eliminar el plan de pago: ${planErr.message}`);
+            }
           }
           deletedCounts.planes = planes.length;
+          console.log(`Todos los ${planes.length} planes eliminados correctamente`);
+        } else {
+          console.log(`ℹ️ No se encontraron planes de pago para este estudiante`);
         }
 
         // 5. Eliminar matrículas
